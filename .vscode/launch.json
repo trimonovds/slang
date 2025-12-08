@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:slang}",
+            "name": "Debug slang",
+            "target": "slang",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug slang"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:slang}",
+            "name": "Release slang",
+            "target": "slang",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release slang"
+        }
+    ]
+}
