@@ -1,6 +1,9 @@
 # SLANG - Simple programming language
 Easy to implement, easy to use!
 
+## Facts about me
+I'm an experienced developer and I want to make a programming language as a pet project. I have experience in iOS (swift) and want to learn a ton from its implementation, but i don't want to write everything from scratch - for example i would like to learn how to implement tokenization, but at the end i don't want to reinvent the wheel. It shouldn't take years to finish this project. I want to use it maybe for personal projects, but i don't think i want it to become popular - so i don't need compilation speed, optimizations and so on.
+
 ## Vision
 - more convenient then c, more simple then swift
 - simple: syntax basically like c but with some features from swift like unions (enums with associated values) with syntaxis like in typescript
