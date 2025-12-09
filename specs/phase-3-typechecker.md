@@ -71,6 +71,17 @@ public indirect enum SlangType: Equatable, CustomStringConvertible {
     public var isNumeric: Bool {
         self == .int || self == .float
     }
+
+    /// Convert from BuiltinTypeName to SlangType
+    public static func from(builtin: BuiltinTypeName) -> SlangType {
+        switch builtin {
+        case .int: return .int
+        case .float: return .float
+        case .string: return .string
+        case .bool: return .bool
+        case .void: return .void
+        }
+    }
 }
 
 /// Information about a struct type
@@ -238,59 +249,55 @@ public class TypeChecker {
 
     private func registerDeclaration(_ decl: Declaration) {
         switch decl {
-        case let funcDecl as FunctionDecl:
-            registerFunction(funcDecl)
-        case let structDecl as StructDecl:
-            registerStruct(structDecl)
-        case let enumDecl as EnumDecl:
-            registerEnum(enumDecl)
-        default:
-            break
+        case .function(let name, let parameters, let returnType, _, _):
+            registerFunction(name: name, parameters: parameters, returnType: returnType)
+        case .structDecl(let name, let fields, _):
+            registerStruct(name: name, fields: fields)
+        case .enumDecl(let name, let cases, _):
+            registerEnum(name: name, cases: cases)
         }
     }
 
-    private func registerFunction(_ decl: FunctionDecl) {
-        let paramTypes = decl.parameters.map { resolveType($0.type) }
-        let returnType = decl.returnType.map { resolveType($0) } ?? .void
-        let funcType = SlangType.function(params: paramTypes, returnType: returnType)
-        environment.defineFunction(decl.name, type: funcType)
+    private func registerFunction(name: String, parameters: [Parameter], returnType: TypeAnnotation?) {
+        let paramTypes = parameters.map { resolveType($0.type) }
+        let retType = returnType.map { resolveType($0) } ?? .void
+        let funcType = SlangType.function(params: paramTypes, returnType: retType)
+        environment.defineFunction(name, type: funcType)
     }
 
-    private func registerStruct(_ decl: StructDecl) {
-        var fields: [String: SlangType] = [:]
-        for field in decl.fields {
-            fields[field.name] = resolveType(field.type)
+    private func registerStruct(name: String, fields: [StructField]) {
+        var fieldMap: [String: SlangType] = [:]
+        for field in fields {
+            fieldMap[field.name] = resolveType(field.type)
         }
-        let info = StructTypeInfo(name: decl.name, fields: fields)
+        let info = StructTypeInfo(name: name, fields: fieldMap)
         environment.defineStructType(info)
     }
 
-    private func registerEnum(_ decl: EnumDecl) {
-        let cases = Set(decl.cases.map { $0.name })
-        let info = EnumTypeInfo(name: decl.name, cases: cases)
+    private func registerEnum(name: String, cases: [EnumCase]) {
+        let caseNames = Set(cases.map { $0.name })
+        let info = EnumTypeInfo(name: name, cases: caseNames)
         environment.defineEnumType(info)
     }
 
     // MARK: - Type Resolution
 
     private func resolveType(_ annotation: TypeAnnotation) -> SlangType {
-        switch annotation.name {
-        case "Int": return .int
-        case "Float": return .float
-        case "String": return .string
-        case "Bool": return .bool
-        case "Void": return .void
-        default:
-            // Check for user-defined types
-            if environment.lookupStructType(annotation.name) != nil {
-                return .structType(name: annotation.name)
-            }
-            if environment.lookupEnumType(annotation.name) != nil {
-                return .enumType(name: annotation.name)
-            }
-            error("Unknown type '\(annotation.name)'", at: annotation.range)
-            return .error
+        // First check if it's a built-in type using the enum
+        if let builtin = annotation.asBuiltin {
+            return SlangType.from(builtin: builtin)
         }
+
+        // Check for user-defined types
+        if environment.lookupStructType(annotation.name) != nil {
+            return .structType(name: annotation.name)
+        }
+        if environment.lookupEnumType(annotation.name) != nil {
+            return .enumType(name: annotation.name)
+        }
+
+        error("Unknown type '\(annotation.name)'", at: annotation.range)
+        return .error
     }
 
     // MARK: - Error Reporting
@@ -311,80 +318,67 @@ public class TypeChecker {
 extension TypeChecker {
     private func checkDeclaration(_ decl: Declaration) {
         switch decl {
-        case let funcDecl as FunctionDecl:
-            checkFunction(funcDecl)
-        case let structDecl as StructDecl:
-            checkStruct(structDecl)
-        case let enumDecl as EnumDecl:
-            checkEnum(enumDecl)
-        default:
-            break
+        case .function(let name, let parameters, let returnType, let body, let range):
+            checkFunction(name: name, parameters: parameters, returnType: returnType, body: body, range: range)
+        case .structDecl(let name, let fields, let range):
+            checkStruct(name: name, fields: fields, range: range)
+        case .enumDecl(let name, let cases, let range):
+            checkEnum(name: name, cases: cases, range: range)
         }
     }
 
-    private func checkFunction(_ decl: FunctionDecl) {
+    private func checkFunction(name: String, parameters: [Parameter], returnType: TypeAnnotation?, body: Statement, range: SourceRange) {
         // Create new scope for function body
         let funcEnv = environment.createChild()
         let savedEnv = environment
         environment = funcEnv
 
         // Add parameters to scope
-        for param in decl.parameters {
+        for param in parameters {
             let paramType = resolveType(param.type)
             environment.defineVariable(param.name, type: paramType)
         }
 
         // Track return type for return statement checking
-        let returnType = decl.returnType.map { resolveType($0) } ?? .void
-        currentFunctionReturnType = returnType
+        let retType = returnType.map { resolveType($0) } ?? .void
+        currentFunctionReturnType = retType
 
         // Check body
-        checkBlock(decl.body)
+        checkStatement(body)
 
         // Verify that non-void functions have a return path
-        // (simplified: just check if there's at least one return)
-        if returnType != .void && !hasReturn(decl.body) {
-            error("Function '\(decl.name)' must return a value of type '\(returnType)'", at: decl.range)
+        if retType != .void && !hasReturn(body) {
+            error("Function '\(name)' must return a value of type '\(retType)'", at: range)
         }
 
         currentFunctionReturnType = nil
         environment = savedEnv
     }
 
-    private func hasReturn(_ block: BlockStmt) -> Bool {
-        for stmt in block.statements {
-            if stmt is ReturnStmt { return true }
-            if let ifStmt = stmt as? IfStmt {
-                if hasReturn(ifStmt.thenBranch) {
-                    if let elseBranch = ifStmt.elseBranch as? BlockStmt, hasReturn(elseBranch) {
-                        return true
-                    }
-                    if let elseIf = ifStmt.elseBranch as? IfStmt, hasReturnInIf(elseIf) {
-                        return true
-                    }
-                }
+    private func hasReturn(_ stmt: Statement) -> Bool {
+        switch stmt {
+        case .block(let statements, _):
+            for s in statements {
+                if hasReturn(s) { return true }
             }
+            return false
+        case .returnStmt:
+            return true
+        case .ifStmt(_, let thenBranch, let elseBranch, _):
+            guard hasReturn(thenBranch) else { return false }
+            guard let elseB = elseBranch else { return false }
+            return hasReturn(elseB)
+        default:
+            return false
         }
-        return false
     }
 
-    private func hasReturnInIf(_ stmt: IfStmt) -> Bool {
-        guard hasReturn(stmt.thenBranch) else { return false }
-        if let elseBranch = stmt.elseBranch as? BlockStmt {
-            return hasReturn(elseBranch)
-        }
-        if let elseIf = stmt.elseBranch as? IfStmt {
-            return hasReturnInIf(elseIf)
-        }
-        return false
-    }
-
-    private func checkStruct(_ decl: StructDecl) {
+    private func checkStruct(name: String, fields: [StructField], range: SourceRange) {
         // Check for duplicate field names
         var seenFields = Set<String>()
-        for field in decl.fields {
+        for field in fields {
             if seenFields.contains(field.name) {
-                error("Duplicate field '\(field.name)' in struct '\(decl.name)'", at: field.range)
+                error("Duplicate field '\(field.name)' in struct '\(name)'", at: field.range)
             }
             seenFields.insert(field.name)
 
@@ -393,12 +387,12 @@ extension TypeChecker {
         }
     }
 
-    private func checkEnum(_ decl: EnumDecl) {
+    private func checkEnum(name: String, cases: [EnumCase], range: SourceRange) {
         // Check for duplicate case names
         var seenCases = Set<String>()
-        for enumCase in decl.cases {
+        for enumCase in cases {
             if seenCases.contains(enumCase.name) {
-                error("Duplicate case '\(enumCase.name)' in enum '\(decl.name)'", at: enumCase.range)
+                error("Duplicate case '\(enumCase.name)' in enum '\(name)'", at: enumCase.range)
             }
             seenCases.insert(enumCase.name)
         }
@@ -414,134 +408,134 @@ extension TypeChecker {
 // MARK: - Statement Checking
 
 extension TypeChecker {
-    private func checkBlock(_ block: BlockStmt) {
-        for stmt in block.statements {
-            checkStatement(stmt)
-        }
-    }
-
     private func checkStatement(_ stmt: Statement) {
         switch stmt {
-        case let varDecl as VarDeclStmt:
-            checkVarDecl(varDecl)
-        case let exprStmt as ExpressionStmt:
-            _ = checkExpression(exprStmt.expression)
-        case let returnStmt as ReturnStmt:
-            checkReturn(returnStmt)
-        case let ifStmt as IfStmt:
-            checkIf(ifStmt)
-        case let forStmt as ForStmt:
-            checkFor(forStmt)
-        case let switchStmt as SwitchStmt:
-            checkSwitch(switchStmt)
-        case let blockStmt as BlockStmt:
+        case .block(let statements, _):
             let childEnv = environment.createChild()
             let savedEnv = environment
             environment = childEnv
-            checkBlock(blockStmt)
+            for s in statements {
+                checkStatement(s)
+            }
             environment = savedEnv
-        default:
-            break
+
+        case .varDecl(let name, let type, let initializer, let range):
+            checkVarDecl(name: name, type: type, initializer: initializer, range: range)
+
+        case .expression(let expr, _):
+            _ = checkExpression(expr)
+
+        case .returnStmt(let value, let range):
+            checkReturn(value: value, range: range)
+
+        case .ifStmt(let condition, let thenBranch, let elseBranch, _):
+            checkIf(condition: condition, thenBranch: thenBranch, elseBranch: elseBranch)
+
+        case .forStmt(let initializer, let condition, let increment, let body, _):
+            checkFor(initializer: initializer, condition: condition, increment: increment, body: body)
+
+        case .switchStmt(let subject, let cases, let range):
+            checkSwitch(subject: subject, cases: cases, range: range)
         }
     }
 
-    private func checkVarDecl(_ stmt: VarDeclStmt) {
-        let declaredType = resolveType(stmt.type)
-        let initType = checkExpression(stmt.initializer)
+    private func checkVarDecl(name: String, type: TypeAnnotation, initializer: Expression, range: SourceRange) {
+        let declaredType = resolveType(type)
+        let initType = checkExpression(initializer)
 
         if declaredType != .error && initType != .error && declaredType != initType {
-            error("Cannot assign value of type '\(initType)' to variable of type '\(declaredType)'", at: stmt.range)
+            error("Cannot assign value of type '\(initType)' to variable of type '\(declaredType)'", at: range)
         }
 
-        environment.defineVariable(stmt.name, type: declaredType)
+        environment.defineVariable(name, type: declaredType)
     }
 
-    private func checkReturn(_ stmt: ReturnStmt) {
+    private func checkReturn(value: Expression?, range: SourceRange) {
         guard let expectedType = currentFunctionReturnType else {
-            error("Return statement outside of function", at: stmt.range)
+            error("Return statement outside of function", at: range)
             return
         }
 
-        if let value = stmt.value {
-            let valueType = checkExpression(value)
+        if let val = value {
+            let valueType = checkExpression(val)
             if valueType != .error && expectedType != .error && valueType != expectedType {
-                error("Cannot return value of type '\(valueType)' from function expecting '\(expectedType)'", at: stmt.range)
+                error("Cannot return value of type '\(valueType)' from function expecting '\(expectedType)'", at: range)
             }
         } else if expectedType != .void {
-            error("Non-void function must return a value", at: stmt.range)
+            error("Non-void function must return a value", at: range)
         }
     }
 
-    private func checkIf(_ stmt: IfStmt) {
-        let condType = checkExpression(stmt.condition)
+    private func checkIf(condition: Expression, thenBranch: Statement, elseBranch: Statement?) {
+        let condType = checkExpression(condition)
         if condType != .error && condType != .bool {
-            error("Condition must be of type 'Bool', got '\(condType)'", at: stmt.condition.range)
+            error("Condition must be of type 'Bool', got '\(condType)'", at: condition.range)
         }
 
         let childEnv = environment.createChild()
         let savedEnv = environment
         environment = childEnv
-        checkBlock(stmt.thenBranch)
+        checkStatement(thenBranch)
         environment = savedEnv
 
-        if let elseBranch = stmt.elseBranch {
+        if let elseB = elseBranch {
             let elseEnv = environment.createChild()
             environment = elseEnv
-            checkStatement(elseBranch)
+            checkStatement(elseB)
             environment = savedEnv
         }
     }
 
-    private func checkFor(_ stmt: ForStmt) {
+    private func checkFor(initializer: Statement?, condition: Expression?, increment: Expression?, body: Statement) {
         let forEnv = environment.createChild()
         let savedEnv = environment
         environment = forEnv
 
-        if let initializer = stmt.initializer {
-            checkVarDecl(initializer)
+        if let init = initializer {
+            checkStatement(init)
         }
 
-        if let condition = stmt.condition {
-            let condType = checkExpression(condition)
+        if let cond = condition {
+            let condType = checkExpression(cond)
             if condType != .error && condType != .bool {
-                error("For loop condition must be of type 'Bool', got '\(condType)'", at: condition.range)
+                error("For loop condition must be of type 'Bool', got '\(condType)'", at: cond.range)
             }
         }
 
-        if let increment = stmt.increment {
-            _ = checkExpression(increment)
+        if let incr = increment {
+            _ = checkExpression(incr)
         }
 
-        checkBlock(stmt.body)
+        checkStatement(body)
 
         environment = savedEnv
     }
 
-    private func checkSwitch(_ stmt: SwitchStmt) {
-        let subjectType = checkExpression(stmt.subject)
+    private func checkSwitch(subject: Expression, cases: [SwitchCase], range: SourceRange) {
+        let subjectType = checkExpression(subject)
 
         // For enum types, check exhaustiveness
         if case .enumType(let enumName) = subjectType {
             guard let enumInfo = environment.lookupEnumType(enumName) else {
-                error("Unknown enum type '\(enumName)'", at: stmt.subject.range)
+                error("Unknown enum type '\(enumName)'", at: subject.range)
                 return
             }
 
             var coveredCases = Set<String>()
 
-            for switchCase in stmt.cases {
+            for switchCase in cases {
                 // Pattern should be EnumName.caseName (MemberAccessExpr)
-                if let memberAccess = switchCase.pattern as? MemberAccessExpr,
-                   let enumIdent = memberAccess.object as? IdentifierExpr {
-                    if enumIdent.name != enumName {
-                        error("Expected case of enum '\(enumName)', got '\(enumIdent.name)'", at: switchCase.pattern.range)
-                    } else if !enumInfo.cases.contains(memberAccess.member) {
-                        error("'\(memberAccess.member)' is not a case of enum '\(enumName)'", at: switchCase.pattern.range)
+                if case .memberAccess(let object, let member, let patternRange) = switchCase.pattern,
+                   case .identifier(let identName, _) = object {
+                    if identName != enumName {
+                        error("Expected case of enum '\(enumName)', got '\(identName)'", at: patternRange)
+                    } else if !enumInfo.cases.contains(member) {
+                        error("'\(member)' is not a case of enum '\(enumName)'", at: patternRange)
                     } else {
-                        if coveredCases.contains(memberAccess.member) {
-                            error("Duplicate case '\(memberAccess.member)' in switch", at: switchCase.pattern.range)
+                        if coveredCases.contains(member) {
+                            error("Duplicate case '\(member)' in switch", at: patternRange)
                         }
-                        coveredCases.insert(memberAccess.member)
+                        coveredCases.insert(member)
                     }
                 } else {
                     error("Invalid switch pattern for enum", at: switchCase.pattern.range)
@@ -555,10 +549,10 @@ extension TypeChecker {
             let missingCases = enumInfo.cases.subtracting(coveredCases)
             if !missingCases.isEmpty {
                 let missing = missingCases.sorted().joined(separator: ", ")
-                error("Switch must be exhaustive. Missing cases: \(missing)", at: stmt.range)
+                error("Switch must be exhaustive. Missing cases: \(missing)", at: range)
             }
         } else if subjectType != .error {
-            error("Switch subject must be an enum type, got '\(subjectType)'", at: stmt.subject.range)
+            error("Switch subject must be an enum type, got '\(subjectType)'", at: subject.range)
         }
     }
 }
@@ -575,47 +569,43 @@ extension TypeChecker {
     @discardableResult
     private func checkExpression(_ expr: Expression) -> SlangType {
         switch expr {
-        case let intLit as IntLiteralExpr:
+        case .intLiteral:
             return .int
 
-        case let floatLit as FloatLiteralExpr:
+        case .floatLiteral:
             return .float
 
-        case let stringLit as StringLiteralExpr:
+        case .stringLiteral:
             return .string
 
-        case let boolLit as BoolLiteralExpr:
+        case .boolLiteral:
             return .bool
 
-        case let stringInterp as StringInterpolationExpr:
-            return checkStringInterpolation(stringInterp)
+        case .stringInterpolation(let parts, _):
+            return checkStringInterpolation(parts: parts)
 
-        case let ident as IdentifierExpr:
-            return checkIdentifier(ident)
+        case .identifier(let name, let range):
+            return checkIdentifier(name: name, range: range)
 
-        case let binary as BinaryExpr:
-            return checkBinary(binary)
+        case .binary(let left, let op, let right, let range):
+            return checkBinary(left: left, op: op, right: right, range: range)
 
-        case let unary as UnaryExpr:
-            return checkUnary(unary)
+        case .unary(let op, let operand, let range):
+            return checkUnary(op: op, operand: operand, range: range)
 
-        case let call as CallExpr:
-            return checkCall(call)
+        case .call(let callee, let arguments, let range):
+            return checkCall(callee: callee, arguments: arguments, range: range)
 
-        case let member as MemberAccessExpr:
-            return checkMemberAccess(member)
+        case .memberAccess(let object, let member, let range):
+            return checkMemberAccess(object: object, member: member, range: range)
 
-        case let structInit as StructInitExpr:
-            return checkStructInit(structInit)
-
-        default:
-            error("Unknown expression type", at: expr.range)
-            return .error
+        case .structInit(let typeName, let fields, let range):
+            return checkStructInit(typeName: typeName, fields: fields, range: range)
         }
     }
 
-    private func checkStringInterpolation(_ expr: StringInterpolationExpr) -> SlangType {
-        for part in expr.parts {
+    private func checkStringInterpolation(parts: [StringPart]) -> SlangType {
+        for part in parts {
             if case .interpolation(let subExpr) = part {
                 // Any type can be interpolated (will be converted to string at runtime)
                 _ = checkExpression(subExpr)
@@ -624,30 +614,30 @@ extension TypeChecker {
         return .string
     }
 
-    private func checkIdentifier(_ expr: IdentifierExpr) -> SlangType {
-        if let type = environment.lookupVariable(expr.name) {
+    private func checkIdentifier(name: String, range: SourceRange) -> SlangType {
+        if let type = environment.lookupVariable(name) {
             return type
         }
-        if let type = environment.lookupFunction(expr.name) {
+        if let type = environment.lookupFunction(name) {
             return type
         }
         // Check if it's an enum type name (for qualified enum access)
-        if environment.lookupEnumType(expr.name) != nil {
-            return .enumType(name: expr.name)
+        if environment.lookupEnumType(name) != nil {
+            return .enumType(name: name)
         }
-        error("Undefined variable '\(expr.name)'", at: expr.range)
+        error("Undefined variable '\(name)'", at: range)
         return .error
     }
 
-    private func checkBinary(_ expr: BinaryExpr) -> SlangType {
-        let leftType = checkExpression(expr.left)
-        let rightType = checkExpression(expr.right)
+    private func checkBinary(left: Expression, op: BinaryOperator, right: Expression, range: SourceRange) -> SlangType {
+        let leftType = checkExpression(left)
+        let rightType = checkExpression(right)
 
         if leftType == .error || rightType == .error {
             return .error
         }
 
-        switch expr.op {
+        switch op {
         // Arithmetic operators
         case .add, .subtract, .multiply, .divide, .modulo:
             if leftType == .int && rightType == .int {
@@ -657,23 +647,23 @@ extension TypeChecker {
                 return .float
             }
             // String concatenation
-            if expr.op == .add && leftType == .string && rightType == .string {
+            if op == .add && leftType == .string && rightType == .string {
                 return .string
             }
-            error("Cannot apply '\(expr.op.rawValue)' to '\(leftType)' and '\(rightType)'", at: expr.range)
+            error("Cannot apply '\(op.rawValue)' to '\(leftType)' and '\(rightType)'", at: range)
             return .error
 
         // Comparison operators
         case .equal, .notEqual:
             if leftType != rightType {
-                error("Cannot compare '\(leftType)' and '\(rightType)'", at: expr.range)
+                error("Cannot compare '\(leftType)' and '\(rightType)'", at: range)
                 return .error
             }
             return .bool
 
         case .less, .lessEqual, .greater, .greaterEqual:
             if !leftType.isNumeric || !rightType.isNumeric {
-                error("Comparison operators require numeric types, got '\(leftType)' and '\(rightType)'", at: expr.range)
+                error("Comparison operators require numeric types, got '\(leftType)' and '\(rightType)'", at: range)
                 return .error
             }
             return .bool
@@ -681,7 +671,7 @@ extension TypeChecker {
         // Logical operators
         case .and, .or:
             if leftType != .bool || rightType != .bool {
-                error("Logical operators require Bool operands, got '\(leftType)' and '\(rightType)'", at: expr.range)
+                error("Logical operators require Bool operands, got '\(leftType)' and '\(rightType)'", at: range)
                 return .error
             }
             return .bool
@@ -689,64 +679,64 @@ extension TypeChecker {
         // Assignment operators
         case .assign:
             if leftType != rightType {
-                error("Cannot assign '\(rightType)' to '\(leftType)'", at: expr.range)
+                error("Cannot assign '\(rightType)' to '\(leftType)'", at: range)
                 return .error
             }
             return leftType
 
         case .addAssign, .subtractAssign, .multiplyAssign, .divideAssign:
             if !leftType.isNumeric || !rightType.isNumeric {
-                error("Compound assignment requires numeric types", at: expr.range)
+                error("Compound assignment requires numeric types", at: range)
                 return .error
             }
             if leftType != rightType {
-                error("Cannot apply '\(expr.op.rawValue)' to '\(leftType)' and '\(rightType)'", at: expr.range)
+                error("Cannot apply '\(op.rawValue)' to '\(leftType)' and '\(rightType)'", at: range)
                 return .error
             }
             return leftType
         }
     }
 
-    private func checkUnary(_ expr: UnaryExpr) -> SlangType {
-        let operandType = checkExpression(expr.operand)
+    private func checkUnary(op: UnaryOperator, operand: Expression, range: SourceRange) -> SlangType {
+        let operandType = checkExpression(operand)
 
         if operandType == .error {
             return .error
         }
 
-        switch expr.op {
+        switch op {
         case .negate:
             if !operandType.isNumeric {
-                error("Cannot negate non-numeric type '\(operandType)'", at: expr.range)
+                error("Cannot negate non-numeric type '\(operandType)'", at: range)
                 return .error
             }
             return operandType
 
         case .not:
             if operandType != .bool {
-                error("Cannot apply '!' to non-Bool type '\(operandType)'", at: expr.range)
+                error("Cannot apply '!' to non-Bool type '\(operandType)'", at: range)
                 return .error
             }
             return .bool
         }
     }
 
-    private func checkCall(_ expr: CallExpr) -> SlangType {
-        let calleeType = checkExpression(expr.callee)
+    private func checkCall(callee: Expression, arguments: [Expression], range: SourceRange) -> SlangType {
+        let calleeType = checkExpression(callee)
 
         guard case .function(let paramTypes, let returnType) = calleeType else {
             if calleeType != .error {
-                error("Cannot call non-function type '\(calleeType)'", at: expr.callee.range)
+                error("Cannot call non-function type '\(calleeType)'", at: callee.range)
             }
             return .error
         }
 
-        if expr.arguments.count != paramTypes.count {
-            error("Expected \(paramTypes.count) argument(s), got \(expr.arguments.count)", at: expr.range)
+        if arguments.count != paramTypes.count {
+            error("Expected \(paramTypes.count) argument(s), got \(arguments.count)", at: range)
             return .error
         }
 
-        for (arg, expectedType) in zip(expr.arguments, paramTypes) {
+        for (arg, expectedType) in zip(arguments, paramTypes) {
             let argType = checkExpression(arg)
             if argType != .error && expectedType != .error && argType != expectedType {
                 error("Argument type '\(argType)' does not match parameter type '\(expectedType)'", at: arg.range)
@@ -756,8 +746,8 @@ extension TypeChecker {
         return returnType
     }
 
-    private func checkMemberAccess(_ expr: MemberAccessExpr) -> SlangType {
-        let objectType = checkExpression(expr.object)
+    private func checkMemberAccess(object: Expression, member: String, range: SourceRange) -> SlangType {
+        let objectType = checkExpression(object)
 
         if objectType == .error {
             return .error
@@ -766,11 +756,11 @@ extension TypeChecker {
         // Enum case access: Direction.up
         if case .enumType(let enumName) = objectType {
             guard let enumInfo = environment.lookupEnumType(enumName) else {
-                error("Unknown enum type '\(enumName)'", at: expr.object.range)
+                error("Unknown enum type '\(enumName)'", at: object.range)
                 return .error
             }
-            if !enumInfo.cases.contains(expr.member) {
-                error("'\(expr.member)' is not a case of enum '\(enumName)'", at: expr.range)
+            if !enumInfo.cases.contains(member) {
+                error("'\(member)' is not a case of enum '\(enumName)'", at: range)
                 return .error
             }
             return .enumType(name: enumName)
@@ -779,29 +769,29 @@ extension TypeChecker {
         // Struct field access: point.x
         if case .structType(let structName) = objectType {
             guard let structInfo = environment.lookupStructType(structName) else {
-                error("Unknown struct type '\(structName)'", at: expr.object.range)
+                error("Unknown struct type '\(structName)'", at: object.range)
                 return .error
             }
-            guard let fieldType = structInfo.fields[expr.member] else {
-                error("Struct '\(structName)' has no field '\(expr.member)'", at: expr.range)
+            guard let fieldType = structInfo.fields[member] else {
+                error("Struct '\(structName)' has no field '\(member)'", at: range)
                 return .error
             }
             return fieldType
         }
 
-        error("Cannot access member '\(expr.member)' on type '\(objectType)'", at: expr.range)
+        error("Cannot access member '\(member)' on type '\(objectType)'", at: range)
         return .error
     }
 
-    private func checkStructInit(_ expr: StructInitExpr) -> SlangType {
-        guard let structInfo = environment.lookupStructType(expr.typeName) else {
-            error("Unknown struct type '\(expr.typeName)'", at: expr.range)
+    private func checkStructInit(typeName: String, fields: [FieldInit], range: SourceRange) -> SlangType {
+        guard let structInfo = environment.lookupStructType(typeName) else {
+            error("Unknown struct type '\(typeName)'", at: range)
             return .error
         }
 
         var providedFields = Set<String>()
 
-        for field in expr.fields {
+        for field in fields {
             if providedFields.contains(field.name) {
                 error("Duplicate field '\(field.name)' in struct initialization", at: field.range)
                 continue
@@ -809,7 +799,7 @@ extension TypeChecker {
             providedFields.insert(field.name)
 
             guard let expectedType = structInfo.fields[field.name] else {
-                error("Struct '\(expr.typeName)' has no field '\(field.name)'", at: field.range)
+                error("Struct '\(typeName)' has no field '\(field.name)'", at: field.range)
                 continue
             }
 
@@ -823,10 +813,10 @@ extension TypeChecker {
         let missingFields = Set(structInfo.fields.keys).subtracting(providedFields)
         if !missingFields.isEmpty {
             let missing = missingFields.sorted().joined(separator: ", ")
-            error("Missing fields in struct initialization: \(missing)", at: expr.range)
+            error("Missing fields in struct initialization: \(missing)", at: range)
         }
 
-        return .structType(name: expr.typeName)
+        return .structType(name: typeName)
     }
 }
 ```

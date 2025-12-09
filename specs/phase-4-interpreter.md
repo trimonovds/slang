@@ -160,9 +160,9 @@ public class Interpreter {
     private var environment: RuntimeEnvironment
 
     // Stored declarations for function lookup
-    private var functions: [String: FunctionDecl] = [:]
-    private var structs: [String: StructDecl] = [:]
-    private var enums: [String: EnumDecl] = [:]
+    private var functions: [String: Declaration] = [:]  // Only .function cases
+    private var structs: [String: Declaration] = [:]     // Only .structDecl cases
+    private var enums: [String: Declaration] = [:]       // Only .enumDecl cases
 
     public init() {
         self.globalEnv = RuntimeEnvironment()
@@ -179,36 +179,36 @@ public class Interpreter {
         }
 
         // Find and call main()
-        guard let main = functions["main"] else {
+        guard let mainDecl = functions["main"],
+              case .function(_, let parameters, _, let body, _) = mainDecl,
+              parameters.isEmpty else {
             throw RuntimeError("No main() function found")
         }
 
-        _ = try executeFunction(main, arguments: [])
+        _ = try executeFunction(parameters: [], body: body, arguments: [])
     }
 
     // MARK: - Declaration Collection
 
     private func collectDeclaration(_ decl: Declaration) {
         switch decl {
-        case let funcDecl as FunctionDecl:
-            functions[funcDecl.name] = funcDecl
-        case let structDecl as StructDecl:
-            structs[structDecl.name] = structDecl
-        case let enumDecl as EnumDecl:
-            enums[enumDecl.name] = enumDecl
-        default:
-            break
+        case .function(let name, _, _, _, _):
+            functions[name] = decl
+        case .structDecl(let name, _, _):
+            structs[name] = decl
+        case .enumDecl(let name, _, _):
+            enums[name] = decl
         }
     }
 
     // MARK: - Function Execution
 
-    private func executeFunction(_ decl: FunctionDecl, arguments: [Value]) throws -> Value {
+    private func executeFunction(parameters: [Parameter], body: Statement, arguments: [Value]) throws -> Value {
         // Create new environment for function scope
         let funcEnv = globalEnv.createChild()
 
         // Bind parameters to arguments
-        for (param, arg) in zip(decl.parameters, arguments) {
+        for (param, arg) in zip(parameters, arguments) {
             funcEnv.define(param.name, value: arg)
         }
 
@@ -217,7 +217,7 @@ public class Interpreter {
         environment = funcEnv
 
         do {
-            try executeBlock(decl.body)
+            try executeStatement(body)
             environment = savedEnv
             return .void
         } catch let returnValue as ReturnValue {
@@ -239,91 +239,83 @@ public class Interpreter {
 // MARK: - Statement Execution
 
 extension Interpreter {
-    private func executeBlock(_ block: BlockStmt) throws {
-        for stmt in block.statements {
-            try executeStatement(stmt)
-        }
-    }
-
     private func executeStatement(_ stmt: Statement) throws {
         switch stmt {
-        case let varDecl as VarDeclStmt:
-            try executeVarDecl(varDecl)
-        case let exprStmt as ExpressionStmt:
-            _ = try evaluate(exprStmt.expression)
-        case let returnStmt as ReturnStmt:
-            try executeReturn(returnStmt)
-        case let ifStmt as IfStmt:
-            try executeIf(ifStmt)
-        case let forStmt as ForStmt:
-            try executeFor(forStmt)
-        case let switchStmt as SwitchStmt:
-            try executeSwitch(switchStmt)
-        case let blockStmt as BlockStmt:
+        case .block(let statements, _):
             let childEnv = environment.createChild()
             let savedEnv = environment
             environment = childEnv
-            try executeBlock(blockStmt)
+            for s in statements {
+                try executeStatement(s)
+            }
             environment = savedEnv
-        default:
-            throw RuntimeError("Unknown statement type", at: stmt.range)
+
+        case .varDecl(let name, _, let initializer, _):
+            let value = try evaluate(initializer)
+            environment.define(name, value: value)
+
+        case .expression(let expr, _):
+            _ = try evaluate(expr)
+
+        case .returnStmt(let value, _):
+            let retValue: Value
+            if let val = value {
+                retValue = try evaluate(val)
+            } else {
+                retValue = .void
+            }
+            throw ReturnValue(value: retValue)
+
+        case .ifStmt(let condition, let thenBranch, let elseBranch, _):
+            try executeIf(condition: condition, thenBranch: thenBranch, elseBranch: elseBranch)
+
+        case .forStmt(let initializer, let condition, let increment, let body, _):
+            try executeFor(initializer: initializer, condition: condition, increment: increment, body: body)
+
+        case .switchStmt(let subject, let cases, let range):
+            try executeSwitch(subject: subject, cases: cases, range: range)
         }
     }
 
-    private func executeVarDecl(_ stmt: VarDeclStmt) throws {
-        let value = try evaluate(stmt.initializer)
-        environment.define(stmt.name, value: value)
-    }
+    private func executeIf(condition: Expression, thenBranch: Statement, elseBranch: Statement?) throws {
+        let condValue = try evaluate(condition)
 
-    private func executeReturn(_ stmt: ReturnStmt) throws {
-        let value: Value
-        if let expr = stmt.value {
-            value = try evaluate(expr)
-        } else {
-            value = .void
-        }
-        throw ReturnValue(value: value)
-    }
-
-    private func executeIf(_ stmt: IfStmt) throws {
-        let condition = try evaluate(stmt.condition)
-
-        guard case .bool(let condValue) = condition else {
-            throw RuntimeError("If condition must be Bool", at: stmt.condition.range)
+        guard case .bool(let cond) = condValue else {
+            throw RuntimeError("If condition must be Bool", at: condition.range)
         }
 
-        if condValue {
+        if cond {
             let childEnv = environment.createChild()
             let savedEnv = environment
             environment = childEnv
-            try executeBlock(stmt.thenBranch)
+            try executeStatement(thenBranch)
             environment = savedEnv
-        } else if let elseBranch = stmt.elseBranch {
+        } else if let elseB = elseBranch {
             let childEnv = environment.createChild()
             let savedEnv = environment
             environment = childEnv
-            try executeStatement(elseBranch)
+            try executeStatement(elseB)
             environment = savedEnv
         }
     }
 
-    private func executeFor(_ stmt: ForStmt) throws {
+    private func executeFor(initializer: Statement?, condition: Expression?, increment: Expression?, body: Statement) throws {
         let forEnv = environment.createChild()
         let savedEnv = environment
         environment = forEnv
 
         // Initializer
-        if let initializer = stmt.initializer {
-            try executeVarDecl(initializer)
+        if let init = initializer {
+            try executeStatement(init)
         }
 
         // Loop
         while true {
             // Check condition
-            if let condition = stmt.condition {
-                let condValue = try evaluate(condition)
+            if let cond = condition {
+                let condValue = try evaluate(cond)
                 guard case .bool(let cont) = condValue else {
-                    throw RuntimeError("For condition must be Bool", at: condition.range)
+                    throw RuntimeError("For condition must be Bool", at: cond.range)
                 }
                 if !cont { break }
             }
@@ -332,32 +324,32 @@ extension Interpreter {
             let bodyEnv = environment.createChild()
             let savedBodyEnv = environment
             environment = bodyEnv
-            try executeBlock(stmt.body)
+            try executeStatement(body)
             environment = savedBodyEnv
 
             // Increment
-            if let increment = stmt.increment {
-                _ = try evaluate(increment)
+            if let incr = increment {
+                _ = try evaluate(incr)
             }
         }
 
         environment = savedEnv
     }
 
-    private func executeSwitch(_ stmt: SwitchStmt) throws {
-        let subject = try evaluate(stmt.subject)
+    private func executeSwitch(subject: Expression, cases: [SwitchCase], range: SourceRange) throws {
+        let subjectValue = try evaluate(subject)
 
-        for switchCase in stmt.cases {
-            let pattern = try evaluate(switchCase.pattern)
+        for switchCase in cases {
+            let patternValue = try evaluate(switchCase.pattern)
 
-            if subject == pattern {
+            if subjectValue == patternValue {
                 try executeStatement(switchCase.body)
                 return
             }
         }
 
         // Should not reach here if type checker verified exhaustiveness
-        throw RuntimeError("No matching case in switch", at: stmt.range)
+        throw RuntimeError("No matching case in switch", at: range)
     }
 }
 ```
@@ -372,47 +364,44 @@ extension Interpreter {
 extension Interpreter {
     private func evaluate(_ expr: Expression) throws -> Value {
         switch expr {
-        case let intLit as IntLiteralExpr:
-            return .int(intLit.value)
+        case .intLiteral(let value, _):
+            return .int(value)
 
-        case let floatLit as FloatLiteralExpr:
-            return .float(floatLit.value)
+        case .floatLiteral(let value, _):
+            return .float(value)
 
-        case let stringLit as StringLiteralExpr:
-            return .string(stringLit.value)
+        case .stringLiteral(let value, _):
+            return .string(value)
 
-        case let boolLit as BoolLiteralExpr:
-            return .bool(boolLit.value)
+        case .boolLiteral(let value, _):
+            return .bool(value)
 
-        case let stringInterp as StringInterpolationExpr:
-            return try evaluateStringInterpolation(stringInterp)
+        case .stringInterpolation(let parts, _):
+            return try evaluateStringInterpolation(parts: parts)
 
-        case let ident as IdentifierExpr:
-            return try evaluateIdentifier(ident)
+        case .identifier(let name, let range):
+            return try evaluateIdentifier(name: name, range: range)
 
-        case let binary as BinaryExpr:
-            return try evaluateBinary(binary)
+        case .binary(let left, let op, let right, let range):
+            return try evaluateBinary(left: left, op: op, right: right, range: range)
 
-        case let unary as UnaryExpr:
-            return try evaluateUnary(unary)
+        case .unary(let op, let operand, let range):
+            return try evaluateUnary(op: op, operand: operand, range: range)
 
-        case let call as CallExpr:
-            return try evaluateCall(call)
+        case .call(let callee, let arguments, let range):
+            return try evaluateCall(callee: callee, arguments: arguments, range: range)
 
-        case let member as MemberAccessExpr:
-            return try evaluateMemberAccess(member)
+        case .memberAccess(let object, let member, let range):
+            return try evaluateMemberAccess(object: object, member: member, range: range)
 
-        case let structInit as StructInitExpr:
-            return try evaluateStructInit(structInit)
-
-        default:
-            throw RuntimeError("Unknown expression type", at: expr.range)
+        case .structInit(let typeName, let fields, let range):
+            return try evaluateStructInit(typeName: typeName, fields: fields, range: range)
         }
     }
 
-    private func evaluateStringInterpolation(_ expr: StringInterpolationExpr) throws -> Value {
+    private func evaluateStringInterpolation(parts: [StringPart]) throws -> Value {
         var result = ""
-        for part in expr.parts {
+        for part in parts {
             switch part {
             case .literal(let str):
                 result += str
@@ -424,242 +413,244 @@ extension Interpreter {
         return .string(result)
     }
 
-    private func evaluateIdentifier(_ expr: IdentifierExpr) throws -> Value {
+    private func evaluateIdentifier(name: String, range: SourceRange) throws -> Value {
         // Check for variable
-        if let value = environment.get(expr.name) {
+        if let value = environment.get(name) {
             return value
         }
 
         // Check for enum type (used in switch patterns like Direction.up)
-        if enums[expr.name] != nil {
+        if enums[name] != nil {
             // Return a placeholder - actual case will be accessed via member access
-            return .enumCase(typeName: expr.name, caseName: "")
+            return .enumCase(typeName: name, caseName: "")
         }
 
-        throw RuntimeError("Undefined variable '\(expr.name)'", at: expr.range)
+        throw RuntimeError("Undefined variable '\(name)'", at: range)
     }
 
-    private func evaluateBinary(_ expr: BinaryExpr) throws -> Value {
+    private func evaluateBinary(left: Expression, op: BinaryOperator, right: Expression, range: SourceRange) throws -> Value {
         // Handle assignment specially (don't evaluate left side as value)
-        switch expr.op {
+        switch op {
         case .assign, .addAssign, .subtractAssign, .multiplyAssign, .divideAssign:
-            return try evaluateAssignment(expr)
+            return try evaluateAssignment(left: left, op: op, right: right, range: range)
         default:
             break
         }
 
-        let left = try evaluate(expr.left)
-        let right = try evaluate(expr.right)
+        let leftVal = try evaluate(left)
+        let rightVal = try evaluate(right)
 
-        switch expr.op {
+        switch op {
         // Arithmetic
         case .add:
-            if case .int(let l) = left, case .int(let r) = right {
+            if case .int(let l) = leftVal, case .int(let r) = rightVal {
                 return .int(l + r)
             }
-            if case .float(let l) = left, case .float(let r) = right {
+            if case .float(let l) = leftVal, case .float(let r) = rightVal {
                 return .float(l + r)
             }
-            if case .string(let l) = left, case .string(let r) = right {
+            if case .string(let l) = leftVal, case .string(let r) = rightVal {
                 return .string(l + r)
             }
-            throw RuntimeError("Cannot add \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot add \(leftVal) and \(rightVal)", at: range)
 
         case .subtract:
-            if case .int(let l) = left, case .int(let r) = right {
+            if case .int(let l) = leftVal, case .int(let r) = rightVal {
                 return .int(l - r)
             }
-            if case .float(let l) = left, case .float(let r) = right {
+            if case .float(let l) = leftVal, case .float(let r) = rightVal {
                 return .float(l - r)
             }
-            throw RuntimeError("Cannot subtract \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot subtract \(leftVal) and \(rightVal)", at: range)
 
         case .multiply:
-            if case .int(let l) = left, case .int(let r) = right {
+            if case .int(let l) = leftVal, case .int(let r) = rightVal {
                 return .int(l * r)
             }
-            if case .float(let l) = left, case .float(let r) = right {
+            if case .float(let l) = leftVal, case .float(let r) = rightVal {
                 return .float(l * r)
             }
-            throw RuntimeError("Cannot multiply \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot multiply \(leftVal) and \(rightVal)", at: range)
 
         case .divide:
-            if case .int(let l) = left, case .int(let r) = right {
-                if r == 0 { throw RuntimeError("Division by zero", at: expr.range) }
+            if case .int(let l) = leftVal, case .int(let r) = rightVal {
+                if r == 0 { throw RuntimeError("Division by zero", at: range) }
                 return .int(l / r)
             }
-            if case .float(let l) = left, case .float(let r) = right {
+            if case .float(let l) = leftVal, case .float(let r) = rightVal {
                 return .float(l / r)
             }
-            throw RuntimeError("Cannot divide \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot divide \(leftVal) and \(rightVal)", at: range)
 
         case .modulo:
-            if case .int(let l) = left, case .int(let r) = right {
-                if r == 0 { throw RuntimeError("Modulo by zero", at: expr.range) }
+            if case .int(let l) = leftVal, case .int(let r) = rightVal {
+                if r == 0 { throw RuntimeError("Modulo by zero", at: range) }
                 return .int(l % r)
             }
-            throw RuntimeError("Cannot modulo \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot modulo \(leftVal) and \(rightVal)", at: range)
 
         // Comparison
         case .equal:
-            return .bool(left == right)
+            return .bool(leftVal == rightVal)
 
         case .notEqual:
-            return .bool(left != right)
+            return .bool(leftVal != rightVal)
 
         case .less:
-            if case .int(let l) = left, case .int(let r) = right {
+            if case .int(let l) = leftVal, case .int(let r) = rightVal {
                 return .bool(l < r)
             }
-            if case .float(let l) = left, case .float(let r) = right {
+            if case .float(let l) = leftVal, case .float(let r) = rightVal {
                 return .bool(l < r)
             }
-            throw RuntimeError("Cannot compare \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot compare \(leftVal) and \(rightVal)", at: range)
 
         case .lessEqual:
-            if case .int(let l) = left, case .int(let r) = right {
+            if case .int(let l) = leftVal, case .int(let r) = rightVal {
                 return .bool(l <= r)
             }
-            if case .float(let l) = left, case .float(let r) = right {
+            if case .float(let l) = leftVal, case .float(let r) = rightVal {
                 return .bool(l <= r)
             }
-            throw RuntimeError("Cannot compare \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot compare \(leftVal) and \(rightVal)", at: range)
 
         case .greater:
-            if case .int(let l) = left, case .int(let r) = right {
+            if case .int(let l) = leftVal, case .int(let r) = rightVal {
                 return .bool(l > r)
             }
-            if case .float(let l) = left, case .float(let r) = right {
+            if case .float(let l) = leftVal, case .float(let r) = rightVal {
                 return .bool(l > r)
             }
-            throw RuntimeError("Cannot compare \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot compare \(leftVal) and \(rightVal)", at: range)
 
         case .greaterEqual:
-            if case .int(let l) = left, case .int(let r) = right {
+            if case .int(let l) = leftVal, case .int(let r) = rightVal {
                 return .bool(l >= r)
             }
-            if case .float(let l) = left, case .float(let r) = right {
+            if case .float(let l) = leftVal, case .float(let r) = rightVal {
                 return .bool(l >= r)
             }
-            throw RuntimeError("Cannot compare \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot compare \(leftVal) and \(rightVal)", at: range)
 
         // Logical
         case .and:
-            if case .bool(let l) = left, case .bool(let r) = right {
+            if case .bool(let l) = leftVal, case .bool(let r) = rightVal {
                 return .bool(l && r)
             }
-            throw RuntimeError("Cannot apply && to \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot apply && to \(leftVal) and \(rightVal)", at: range)
 
         case .or:
-            if case .bool(let l) = left, case .bool(let r) = right {
+            if case .bool(let l) = leftVal, case .bool(let r) = rightVal {
                 return .bool(l || r)
             }
-            throw RuntimeError("Cannot apply || to \(left) and \(right)", at: expr.range)
+            throw RuntimeError("Cannot apply || to \(leftVal) and \(rightVal)", at: range)
 
-        default:
-            throw RuntimeError("Unknown binary operator", at: expr.range)
+        case .assign, .addAssign, .subtractAssign, .multiplyAssign, .divideAssign:
+            // Already handled above
+            fatalError("Assignment should have been handled earlier")
         }
     }
 
-    private func evaluateAssignment(_ expr: BinaryExpr) throws -> Value {
-        guard let ident = expr.left as? IdentifierExpr else {
-            throw RuntimeError("Invalid assignment target", at: expr.left.range)
+    private func evaluateAssignment(left: Expression, op: BinaryOperator, right: Expression, range: SourceRange) throws -> Value {
+        guard case .identifier(let name, let identRange) = left else {
+            throw RuntimeError("Invalid assignment target", at: left.range)
         }
 
-        let right = try evaluate(expr.right)
-        var newValue = right
+        let rightVal = try evaluate(right)
+        var newValue = rightVal
 
         // Compound assignment
-        if expr.op != .assign {
-            guard let currentValue = environment.get(ident.name) else {
-                throw RuntimeError("Undefined variable '\(ident.name)'", at: ident.range)
+        if op != .assign {
+            guard let currentValue = environment.get(name) else {
+                throw RuntimeError("Undefined variable '\(name)'", at: identRange)
             }
 
-            switch expr.op {
+            switch op {
             case .addAssign:
-                if case .int(let l) = currentValue, case .int(let r) = right {
+                if case .int(let l) = currentValue, case .int(let r) = rightVal {
                     newValue = .int(l + r)
                 } else {
-                    throw RuntimeError("Cannot apply += to \(currentValue) and \(right)", at: expr.range)
+                    throw RuntimeError("Cannot apply += to \(currentValue) and \(rightVal)", at: range)
                 }
             case .subtractAssign:
-                if case .int(let l) = currentValue, case .int(let r) = right {
+                if case .int(let l) = currentValue, case .int(let r) = rightVal {
                     newValue = .int(l - r)
                 } else {
-                    throw RuntimeError("Cannot apply -= to \(currentValue) and \(right)", at: expr.range)
+                    throw RuntimeError("Cannot apply -= to \(currentValue) and \(rightVal)", at: range)
                 }
             case .multiplyAssign:
-                if case .int(let l) = currentValue, case .int(let r) = right {
+                if case .int(let l) = currentValue, case .int(let r) = rightVal {
                     newValue = .int(l * r)
                 } else {
-                    throw RuntimeError("Cannot apply *= to \(currentValue) and \(right)", at: expr.range)
+                    throw RuntimeError("Cannot apply *= to \(currentValue) and \(rightVal)", at: range)
                 }
             case .divideAssign:
-                if case .int(let l) = currentValue, case .int(let r) = right {
-                    if r == 0 { throw RuntimeError("Division by zero", at: expr.range) }
+                if case .int(let l) = currentValue, case .int(let r) = rightVal {
+                    if r == 0 { throw RuntimeError("Division by zero", at: range) }
                     newValue = .int(l / r)
                 } else {
-                    throw RuntimeError("Cannot apply /= to \(currentValue) and \(right)", at: expr.range)
+                    throw RuntimeError("Cannot apply /= to \(currentValue) and \(rightVal)", at: range)
                 }
             default:
                 break
             }
         }
 
-        if !environment.assign(ident.name, value: newValue) {
-            throw RuntimeError("Undefined variable '\(ident.name)'", at: ident.range)
+        if !environment.assign(name, value: newValue) {
+            throw RuntimeError("Undefined variable '\(name)'", at: identRange)
         }
 
         return newValue
     }
 
-    private func evaluateUnary(_ expr: UnaryExpr) throws -> Value {
-        let operand = try evaluate(expr.operand)
+    private func evaluateUnary(op: UnaryOperator, operand: Expression, range: SourceRange) throws -> Value {
+        let operandVal = try evaluate(operand)
 
-        switch expr.op {
+        switch op {
         case .negate:
-            if case .int(let n) = operand {
+            if case .int(let n) = operandVal {
                 return .int(-n)
             }
-            if case .float(let f) = operand {
+            if case .float(let f) = operandVal {
                 return .float(-f)
             }
-            throw RuntimeError("Cannot negate \(operand)", at: expr.range)
+            throw RuntimeError("Cannot negate \(operandVal)", at: range)
 
         case .not:
-            if case .bool(let b) = operand {
+            if case .bool(let b) = operandVal {
                 return .bool(!b)
             }
-            throw RuntimeError("Cannot apply ! to \(operand)", at: expr.range)
+            throw RuntimeError("Cannot apply ! to \(operandVal)", at: range)
         }
     }
 
-    private func evaluateCall(_ expr: CallExpr) throws -> Value {
+    private func evaluateCall(callee: Expression, arguments: [Expression], range: SourceRange) throws -> Value {
         // Get the function name
-        guard let ident = expr.callee as? IdentifierExpr else {
-            throw RuntimeError("Invalid call target", at: expr.callee.range)
+        guard case .identifier(let name, let identRange) = callee else {
+            throw RuntimeError("Invalid call target", at: callee.range)
         }
 
         // Check for built-in functions
-        if ident.name == "print" {
-            return try evaluatePrint(expr.arguments)
+        if name == "print" {
+            return try evaluatePrint(arguments: arguments)
         }
 
         // User-defined function
-        guard let funcDecl = functions[ident.name] else {
-            throw RuntimeError("Undefined function '\(ident.name)'", at: ident.range)
+        guard let funcDecl = functions[name],
+              case .function(_, let parameters, _, let body, _) = funcDecl else {
+            throw RuntimeError("Undefined function '\(name)'", at: identRange)
         }
 
         // Evaluate arguments
         var args: [Value] = []
-        for arg in expr.arguments {
+        for arg in arguments {
             args.append(try evaluate(arg))
         }
 
-        return try executeFunction(funcDecl, arguments: args)
+        return try executeFunction(parameters: parameters, body: body, arguments: args)
     }
 
-    private func evaluatePrint(_ arguments: [Expression]) throws -> Value {
+    private func evaluatePrint(arguments: [Expression]) throws -> Value {
         guard arguments.count == 1 else {
             throw RuntimeError("print() expects 1 argument, got \(arguments.count)")
         }
@@ -675,52 +666,54 @@ extension Interpreter {
         return .void
     }
 
-    private func evaluateMemberAccess(_ expr: MemberAccessExpr) throws -> Value {
-        let object = try evaluate(expr.object)
+    private func evaluateMemberAccess(object: Expression, member: String, range: SourceRange) throws -> Value {
+        let objectVal = try evaluate(object)
 
         // Enum case access: Direction.up
-        if case .enumCase(let typeName, _) = object {
+        if case .enumCase(let typeName, _) = objectVal {
             // Check that the case exists
-            guard let enumDecl = enums[typeName] else {
-                throw RuntimeError("Unknown enum '\(typeName)'", at: expr.object.range)
+            guard let enumDecl = enums[typeName],
+                  case .enumDecl(_, let cases, _) = enumDecl else {
+                throw RuntimeError("Unknown enum '\(typeName)'", at: object.range)
             }
-            guard enumDecl.cases.contains(where: { $0.name == expr.member }) else {
-                throw RuntimeError("Enum '\(typeName)' has no case '\(expr.member)'", at: expr.range)
+            guard cases.contains(where: { $0.name == member }) else {
+                throw RuntimeError("Enum '\(typeName)' has no case '\(member)'", at: range)
             }
-            return .enumCase(typeName: typeName, caseName: expr.member)
+            return .enumCase(typeName: typeName, caseName: member)
         }
 
         // Struct field access: point.x
-        if case .structInstance(let typeName, let fields) = object {
-            guard let value = fields[expr.member] else {
-                throw RuntimeError("Struct '\(typeName)' has no field '\(expr.member)'", at: expr.range)
+        if case .structInstance(let typeName, let fields) = objectVal {
+            guard let value = fields[member] else {
+                throw RuntimeError("Struct '\(typeName)' has no field '\(member)'", at: range)
             }
             return value
         }
 
-        throw RuntimeError("Cannot access member '\(expr.member)' on \(object)", at: expr.range)
+        throw RuntimeError("Cannot access member '\(member)' on \(objectVal)", at: range)
     }
 
-    private func evaluateStructInit(_ expr: StructInitExpr) throws -> Value {
-        guard let structDecl = structs[expr.typeName] else {
-            throw RuntimeError("Unknown struct '\(expr.typeName)'", at: expr.range)
+    private func evaluateStructInit(typeName: String, fields: [FieldInit], range: SourceRange) throws -> Value {
+        guard let structDecl = structs[typeName],
+              case .structDecl(_, let structFields, _) = structDecl else {
+            throw RuntimeError("Unknown struct '\(typeName)'", at: range)
         }
 
-        var fields: [String: Value] = [:]
+        var fieldValues: [String: Value] = [:]
 
-        for field in expr.fields {
+        for field in fields {
             let value = try evaluate(field.value)
-            fields[field.name] = value
+            fieldValues[field.name] = value
         }
 
         // Verify all fields are present
-        for structField in structDecl.fields {
-            if fields[structField.name] == nil {
-                throw RuntimeError("Missing field '\(structField.name)' in struct initialization", at: expr.range)
+        for structField in structFields {
+            if fieldValues[structField.name] == nil {
+                throw RuntimeError("Missing field '\(structField.name)' in struct initialization", at: range)
             }
         }
 
-        return .structInstance(typeName: expr.typeName, fields: fields)
+        return .structInstance(typeName: typeName, fields: fieldValues)
     }
 }
 ```
