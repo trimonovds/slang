@@ -13,52 +13,60 @@ public struct DiagnosticPrinter: Sendable {
     }
 
     public func print(_ diagnostic: Diagnostic) {
+        Swift.print(format(diagnostic))
+    }
+
+    /// Formats a diagnostic to a string (useful for testing)
+    public func format(_ diagnostic: Diagnostic, useColors: Bool = true) -> String {
+        var output: [String] = []
+
         let severityColor: String
         let severityText: String
 
         switch diagnostic.severity {
         case .error:
-            severityColor = "\u{001B}[31m"  // Red
+            severityColor = useColors ? "\u{001B}[31m" : ""  // Red
             severityText = "error"
         case .warning:
-            severityColor = "\u{001B}[33m"  // Yellow
+            severityColor = useColors ? "\u{001B}[33m" : ""  // Yellow
             severityText = "warning"
         case .note:
-            severityColor = "\u{001B}[34m"  // Blue
+            severityColor = useColors ? "\u{001B}[34m" : ""  // Blue
             severityText = "note"
         }
 
-        let reset = "\u{001B}[0m"
-        let bold = "\u{001B}[1m"
+        let reset = useColors ? "\u{001B}[0m" : ""
+        let bold = useColors ? "\u{001B}[1m" : ""
 
         // Print the main message
-        Swift.print("\(severityColor)\(bold)\(severityText):\(reset)\(bold) \(diagnostic.message)\(reset)")
+        output.append("\(severityColor)\(bold)\(severityText):\(reset)\(bold) \(diagnostic.message)\(reset)")
 
         // Print the location
-        Swift.print("  \(severityColor)-->\(reset) \(diagnostic.range.file):\(diagnostic.range.start.line):\(diagnostic.range.start.column)")
+        output.append("  \(severityColor)-->\(reset) \(diagnostic.range.file):\(diagnostic.range.start.line):\(diagnostic.range.start.column)")
 
         // Print the source context
-        printSourceContext(diagnostic.range, color: severityColor)
+        output.append(contentsOf: formatSourceContext(diagnostic.range, color: severityColor, reset: reset))
 
-        Swift.print()  // Empty line after each diagnostic
+        output.append("")  // Empty line after each diagnostic
+        return output.joined(separator: "\n")
     }
 
-    private func printSourceContext(_ range: SourceRange, color: String) {
-        let reset = "\u{001B}[0m"
+    private func formatSourceContext(_ range: SourceRange, color: String, reset: String) -> [String] {
+        var output: [String] = []
         let line = range.start.line
         let column = range.start.column
 
-        guard line > 0 && line <= lines.count else { return }
+        guard line > 0 && line <= lines.count else { return output }
 
         let sourceLine = lines[line - 1]
         let lineNumStr = String(line)
         let padding = String(repeating: " ", count: lineNumStr.count)
 
         // Print the gutter
-        Swift.print("   \(padding)\(color)|\(reset)")
+        output.append(" \(padding) \(color)|\(reset)")
 
         // Print the source line
-        Swift.print(" \(color)\(lineNumStr)\(reset) \(color)|\(reset) \(sourceLine)")
+        output.append(" \(color)\(lineNumStr)\(reset) \(color)|\(reset) \(sourceLine)")
 
         // Print the underline
         let spaces = String(repeating: " ", count: column - 1)
@@ -68,6 +76,8 @@ public struct DiagnosticPrinter: Sendable {
         } else {
             underline = "^"
         }
-        Swift.print("   \(padding)\(color)|\(reset) \(spaces)\(color)\(underline)\(reset)")
+        output.append(" \(padding) \(color)|\(reset) \(spaces)\(color)\(underline)\(reset)")
+
+        return output
     }
 }
