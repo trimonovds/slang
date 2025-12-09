@@ -248,12 +248,12 @@ public class TypeChecker {
     // MARK: - First Pass: Registration
 
     private func registerDeclaration(_ decl: Declaration) {
-        switch decl {
-        case .function(let name, let parameters, let returnType, _, _):
+        switch decl.kind {
+        case .function(let name, let parameters, let returnType, _):
             registerFunction(name: name, parameters: parameters, returnType: returnType)
-        case .structDecl(let name, let fields, _):
+        case .structDecl(let name, let fields):
             registerStruct(name: name, fields: fields)
-        case .enumDecl(let name, let cases, _):
+        case .enumDecl(let name, let cases):
             registerEnum(name: name, cases: cases)
         }
     }
@@ -317,13 +317,13 @@ public class TypeChecker {
 
 extension TypeChecker {
     private func checkDeclaration(_ decl: Declaration) {
-        switch decl {
-        case .function(let name, let parameters, let returnType, let body, let range):
-            checkFunction(name: name, parameters: parameters, returnType: returnType, body: body, range: range)
-        case .structDecl(let name, let fields, let range):
-            checkStruct(name: name, fields: fields, range: range)
-        case .enumDecl(let name, let cases, let range):
-            checkEnum(name: name, cases: cases, range: range)
+        switch decl.kind {
+        case .function(let name, let parameters, let returnType, let body):
+            checkFunction(name: name, parameters: parameters, returnType: returnType, body: body, range: decl.range)
+        case .structDecl(let name, let fields):
+            checkStruct(name: name, fields: fields)
+        case .enumDecl(let name, let cases):
+            checkEnum(name: name, cases: cases)
         }
     }
 
@@ -356,15 +356,15 @@ extension TypeChecker {
     }
 
     private func hasReturn(_ stmt: Statement) -> Bool {
-        switch stmt {
-        case .block(let statements, _):
+        switch stmt.kind {
+        case .block(let statements):
             for s in statements {
                 if hasReturn(s) { return true }
             }
             return false
         case .returnStmt:
             return true
-        case .ifStmt(_, let thenBranch, let elseBranch, _):
+        case .ifStmt(_, let thenBranch, let elseBranch):
             guard hasReturn(thenBranch) else { return false }
             guard let elseB = elseBranch else { return false }
             return hasReturn(elseB)
@@ -373,7 +373,7 @@ extension TypeChecker {
         }
     }
 
-    private func checkStruct(name: String, fields: [StructField], range: SourceRange) {
+    private func checkStruct(name: String, fields: [StructField]) {
         // Check for duplicate field names
         var seenFields = Set<String>()
         for field in fields {
@@ -387,7 +387,7 @@ extension TypeChecker {
         }
     }
 
-    private func checkEnum(name: String, cases: [EnumCase], range: SourceRange) {
+    private func checkEnum(name: String, cases: [EnumCase]) {
         // Check for duplicate case names
         var seenCases = Set<String>()
         for enumCase in cases {
@@ -409,8 +409,8 @@ extension TypeChecker {
 
 extension TypeChecker {
     private func checkStatement(_ stmt: Statement) {
-        switch stmt {
-        case .block(let statements, _):
+        switch stmt.kind {
+        case .block(let statements):
             let childEnv = environment.createChild()
             let savedEnv = environment
             environment = childEnv
@@ -419,23 +419,23 @@ extension TypeChecker {
             }
             environment = savedEnv
 
-        case .varDecl(let name, let type, let initializer, let range):
-            checkVarDecl(name: name, type: type, initializer: initializer, range: range)
+        case .varDecl(let name, let type, let initializer):
+            checkVarDecl(name: name, type: type, initializer: initializer, range: stmt.range)
 
-        case .expression(let expr, _):
+        case .expression(let expr):
             _ = checkExpression(expr)
 
-        case .returnStmt(let value, let range):
-            checkReturn(value: value, range: range)
+        case .returnStmt(let value):
+            checkReturn(value: value, range: stmt.range)
 
-        case .ifStmt(let condition, let thenBranch, let elseBranch, _):
+        case .ifStmt(let condition, let thenBranch, let elseBranch):
             checkIf(condition: condition, thenBranch: thenBranch, elseBranch: elseBranch)
 
-        case .forStmt(let initializer, let condition, let increment, let body, _):
+        case .forStmt(let initializer, let condition, let increment, let body):
             checkFor(initializer: initializer, condition: condition, increment: increment, body: body)
 
-        case .switchStmt(let subject, let cases, let range):
-            checkSwitch(subject: subject, cases: cases, range: range)
+        case .switchStmt(let subject, let cases):
+            checkSwitch(subject: subject, cases: cases, range: stmt.range)
         }
     }
 
@@ -491,8 +491,8 @@ extension TypeChecker {
         let savedEnv = environment
         environment = forEnv
 
-        if let init = initializer {
-            checkStatement(init)
+        if let initStmt = initializer {
+            checkStatement(initStmt)
         }
 
         if let cond = condition {
@@ -525,15 +525,15 @@ extension TypeChecker {
 
             for switchCase in cases {
                 // Pattern should be EnumName.caseName (MemberAccessExpr)
-                if case .memberAccess(let object, let member, let patternRange) = switchCase.pattern,
-                   case .identifier(let identName, _) = object {
+                if case .memberAccess(let object, let member) = switchCase.pattern.kind,
+                   case .identifier(let identName) = object.kind {
                     if identName != enumName {
-                        error("Expected case of enum '\(enumName)', got '\(identName)'", at: patternRange)
+                        error("Expected case of enum '\(enumName)', got '\(identName)'", at: switchCase.pattern.range)
                     } else if !enumInfo.cases.contains(member) {
-                        error("'\(member)' is not a case of enum '\(enumName)'", at: patternRange)
+                        error("'\(member)' is not a case of enum '\(enumName)'", at: switchCase.pattern.range)
                     } else {
                         if coveredCases.contains(member) {
-                            error("Duplicate case '\(member)' in switch", at: patternRange)
+                            error("Duplicate case '\(member)' in switch", at: switchCase.pattern.range)
                         }
                         coveredCases.insert(member)
                     }
@@ -568,7 +568,7 @@ extension TypeChecker {
 extension TypeChecker {
     @discardableResult
     private func checkExpression(_ expr: Expression) -> SlangType {
-        switch expr {
+        switch expr.kind {
         case .intLiteral:
             return .int
 
@@ -581,26 +581,26 @@ extension TypeChecker {
         case .boolLiteral:
             return .bool
 
-        case .stringInterpolation(let parts, _):
+        case .stringInterpolation(let parts):
             return checkStringInterpolation(parts: parts)
 
-        case .identifier(let name, let range):
-            return checkIdentifier(name: name, range: range)
+        case .identifier(let name):
+            return checkIdentifier(name: name, range: expr.range)
 
-        case .binary(let left, let op, let right, let range):
-            return checkBinary(left: left, op: op, right: right, range: range)
+        case .binary(let left, let op, let right):
+            return checkBinary(left: left, op: op, right: right, range: expr.range)
 
-        case .unary(let op, let operand, let range):
-            return checkUnary(op: op, operand: operand, range: range)
+        case .unary(let op, let operand):
+            return checkUnary(op: op, operand: operand, range: expr.range)
 
-        case .call(let callee, let arguments, let range):
-            return checkCall(callee: callee, arguments: arguments, range: range)
+        case .call(let callee, let arguments):
+            return checkCall(callee: callee, arguments: arguments, range: expr.range)
 
-        case .memberAccess(let object, let member, let range):
-            return checkMemberAccess(object: object, member: member, range: range)
+        case .memberAccess(let object, let member):
+            return checkMemberAccess(object: object, member: member, range: expr.range)
 
-        case .structInit(let typeName, let fields, let range):
-            return checkStructInit(typeName: typeName, fields: fields, range: range)
+        case .structInit(let typeName, let fields):
+            return checkStructInit(typeName: typeName, fields: fields, range: expr.range)
         }
     }
 
@@ -975,6 +975,8 @@ func main() {
   - [ ] Function call argument type checking
   - [ ] Struct field access type checking
   - [ ] Struct initialization type checking
+- [ ] Uses `expr.kind` and `stmt.kind` pattern matching
+- [ ] Accesses `expr.range` directly for error reporting
 - [ ] Error type prevents cascading errors
 - [ ] Good error messages with source locations
 - [ ] All test cases pass

@@ -25,14 +25,43 @@ The parser transforms a stream of tokens into an Abstract Syntax Tree (AST). The
 
 ---
 
-## Design Decision: Enums with Associated Values
+## Design Decisions
 
-We use **enums with associated values** instead of protocols with structs because:
+### 1. Kind + Wrapper Struct Pattern
 
-1. **Exhaustive pattern matching** - Compiler ensures all cases are handled
-2. **No type casting** - No `as?` or `as!` needed
-3. **Clean switch statements** - Pattern matching with value extraction
-4. **Type safety** - Cannot forget to handle a case
+We use **enums for node kinds** wrapped in **structs with common properties**:
+
+```swift
+// Kind enum - contains only semantic data
+indirect enum ExpressionKind {
+    case intLiteral(value: Int)
+    case binary(left: Expression, op: BinaryOperator, right: Expression)
+    ...
+}
+
+// Wrapper struct - contains common properties
+struct Expression {
+    let kind: ExpressionKind
+    let range: SourceRange
+}
+```
+
+**Benefits:**
+- Common properties (`range`) aren't repeated in every case
+- Easy to access: `expr.range` instead of pattern matching
+- Easy to add more common fields later (e.g., `type: SlangType?` for typed AST)
+- Clean separation of concerns
+
+### 2. Enums with Associated Values
+
+Using enums (vs protocols) provides:
+- **Exhaustive pattern matching** - Compiler ensures all cases handled
+- **No type casting** - No `as?` or `as!` needed
+- **Clean switch statements** - Pattern matching with value extraction
+
+### 3. RawRepresentable for Built-in Types
+
+Built-in type names use `BuiltinTypeName` enum instead of magic strings.
 
 ---
 
@@ -89,7 +118,7 @@ public enum UnaryOperator: String {
     case not = "!"
 }
 
-// MARK: - Simple Data Containers (keep as structs)
+// MARK: - Simple Data Containers
 
 public struct Parameter {
     public let name: String
@@ -172,167 +201,132 @@ public enum StringPart {
 
 ---
 
-## Step 2: AST.swift - Declaration Enum
+## Step 2: AST.swift - Expression (Kind + Wrapper)
 
 ```swift
-// MARK: - Declarations
+// MARK: - Expressions
 
-public enum Declaration {
-    case function(
-        name: String,
-        parameters: [Parameter],
-        returnType: TypeAnnotation?,
-        body: Statement,  // Always a .block
-        range: SourceRange
-    )
+/// The semantic content of an expression (no range - that's in the wrapper)
+public indirect enum ExpressionKind {
+    // Literals
+    case intLiteral(value: Int)
+    case floatLiteral(value: Double)
+    case stringLiteral(value: String)
+    case boolLiteral(value: Bool)
 
-    case structDecl(
-        name: String,
-        fields: [StructField],
-        range: SourceRange
-    )
+    // String interpolation
+    case stringInterpolation(parts: [StringPart])
 
-    case enumDecl(
-        name: String,
-        cases: [EnumCase],
-        range: SourceRange
-    )
+    // Identifier
+    case identifier(name: String)
 
-    /// Get the source range for any declaration
-    public var range: SourceRange {
-        switch self {
-        case .function(_, _, _, _, let range),
-             .structDecl(_, _, let range),
-             .enumDecl(_, _, let range):
-            return range
-        }
-    }
+    // Operators
+    case binary(left: Expression, op: BinaryOperator, right: Expression)
+    case unary(op: UnaryOperator, operand: Expression)
 
-    /// Get the name of the declaration
-    public var name: String {
-        switch self {
-        case .function(let name, _, _, _, _),
-             .structDecl(let name, _, _),
-             .enumDecl(let name, _, _):
-            return name
-        }
+    // Access
+    case call(callee: Expression, arguments: [Expression])
+    case memberAccess(object: Expression, member: String)
+
+    // Struct initialization
+    case structInit(typeName: String, fields: [FieldInit])
+}
+
+/// An expression with source location
+public struct Expression {
+    public let kind: ExpressionKind
+    public let range: SourceRange
+
+    public init(kind: ExpressionKind, range: SourceRange) {
+        self.kind = kind
+        self.range = range
     }
 }
 ```
 
 ---
 
-## Step 3: AST.swift - Statement Enum
+## Step 3: AST.swift - Statement (Kind + Wrapper)
 
 ```swift
 // MARK: - Statements
 
-public indirect enum Statement {
-    case block(
-        statements: [Statement],
-        range: SourceRange
-    )
+/// The semantic content of a statement
+public indirect enum StatementKind {
+    case block(statements: [Statement])
 
-    case varDecl(
-        name: String,
-        type: TypeAnnotation,
-        initializer: Expression,
-        range: SourceRange
-    )
+    case varDecl(name: String, type: TypeAnnotation, initializer: Expression)
 
-    case expression(
-        expr: Expression,
-        range: SourceRange
-    )
+    case expression(expr: Expression)
 
-    case returnStmt(
-        value: Expression?,
-        range: SourceRange
-    )
+    case returnStmt(value: Expression?)
 
     case ifStmt(
         condition: Expression,
         thenBranch: Statement,  // Always a .block
-        elseBranch: Statement?, // Either .block or .ifStmt (else if)
-        range: SourceRange
+        elseBranch: Statement?  // Either .block or .ifStmt (else if)
     )
 
     case forStmt(
         initializer: Statement?,  // .varDecl or nil
         condition: Expression?,
         increment: Expression?,
-        body: Statement,  // Always a .block
-        range: SourceRange
+        body: Statement  // Always a .block
     )
 
-    case switchStmt(
-        subject: Expression,
-        cases: [SwitchCase],
-        range: SourceRange
-    )
+    case switchStmt(subject: Expression, cases: [SwitchCase])
+}
 
-    /// Get the source range for any statement
-    public var range: SourceRange {
-        switch self {
-        case .block(_, let range),
-             .varDecl(_, _, _, let range),
-             .expression(_, let range),
-             .returnStmt(_, let range),
-             .ifStmt(_, _, _, let range),
-             .forStmt(_, _, _, _, let range),
-             .switchStmt(_, _, let range):
-            return range
-        }
+/// A statement with source location
+public struct Statement {
+    public let kind: StatementKind
+    public let range: SourceRange
+
+    public init(kind: StatementKind, range: SourceRange) {
+        self.kind = kind
+        self.range = range
     }
 }
 ```
 
 ---
 
-## Step 4: AST.swift - Expression Enum
+## Step 4: AST.swift - Declaration (Kind + Wrapper)
 
 ```swift
-// MARK: - Expressions
+// MARK: - Declarations
 
-public indirect enum Expression {
-    // Literals
-    case intLiteral(value: Int, range: SourceRange)
-    case floatLiteral(value: Double, range: SourceRange)
-    case stringLiteral(value: String, range: SourceRange)
-    case boolLiteral(value: Bool, range: SourceRange)
+/// The semantic content of a declaration
+public enum DeclarationKind {
+    case function(
+        name: String,
+        parameters: [Parameter],
+        returnType: TypeAnnotation?,
+        body: Statement  // Always a .block
+    )
 
-    // String interpolation
-    case stringInterpolation(parts: [StringPart], range: SourceRange)
+    case structDecl(name: String, fields: [StructField])
 
-    // Identifier
-    case identifier(name: String, range: SourceRange)
+    case enumDecl(name: String, cases: [EnumCase])
+}
 
-    // Operators
-    case binary(left: Expression, op: BinaryOperator, right: Expression, range: SourceRange)
-    case unary(op: UnaryOperator, operand: Expression, range: SourceRange)
+/// A declaration with source location
+public struct Declaration {
+    public let kind: DeclarationKind
+    public let range: SourceRange
 
-    // Access
-    case call(callee: Expression, arguments: [Expression], range: SourceRange)
-    case memberAccess(object: Expression, member: String, range: SourceRange)
+    public init(kind: DeclarationKind, range: SourceRange) {
+        self.kind = kind
+        self.range = range
+    }
 
-    // Struct initialization
-    case structInit(typeName: String, fields: [FieldInit], range: SourceRange)
-
-    /// Get the source range for any expression
-    public var range: SourceRange {
-        switch self {
-        case .intLiteral(_, let range),
-             .floatLiteral(_, let range),
-             .stringLiteral(_, let range),
-             .boolLiteral(_, let range),
-             .stringInterpolation(_, let range),
-             .identifier(_, let range),
-             .binary(_, _, _, let range),
-             .unary(_, _, let range),
-             .call(_, _, let range),
-             .memberAccess(_, _, let range),
-             .structInit(_, _, let range):
-            return range
+    /// Get the name of the declaration
+    public var name: String {
+        switch kind {
+        case .function(let name, _, _, _),
+             .structDecl(let name, _),
+             .enumDecl(let name, _):
+            return name
         }
     }
 }
@@ -543,11 +537,13 @@ extension Parser {
 
         let body = try parseBlockStmt()
 
-        return .function(
-            name: name,
-            parameters: parameters,
-            returnType: returnType,
-            body: body,
+        return Declaration(
+            kind: .function(
+                name: name,
+                parameters: parameters,
+                returnType: returnType,
+                body: body
+            ),
             range: startToken.range.extended(to: body.range)
         )
     }
@@ -601,9 +597,8 @@ extension Parser {
 
         let endToken = try consume(.rightBrace, message: "Expected '}' after struct fields")
 
-        return .structDecl(
-            name: name,
-            fields: fields,
+        return Declaration(
+            kind: .structDecl(name: name, fields: fields),
             range: startToken.range.extended(to: endToken.range)
         )
     }
@@ -655,9 +650,8 @@ extension Parser {
 
         let endToken = try consume(.rightBrace, message: "Expected '}' after enum cases")
 
-        return .enumDecl(
-            name: name,
-            cases: cases,
+        return Declaration(
+            kind: .enumDecl(name: name, cases: cases),
             range: startToken.range.extended(to: endToken.range)
         )
     }
@@ -685,8 +679,8 @@ extension Parser {
 
         let endToken = try consume(.rightBrace, message: "Expected '}'")
 
-        return .block(
-            statements: statements,
+        return Statement(
+            kind: .block(statements: statements),
             range: startToken.range.extended(to: endToken.range)
         )
     }
@@ -733,10 +727,8 @@ extension Parser {
         // Consume optional semicolon
         if check(.semicolon) { advance() }
 
-        return .varDecl(
-            name: name,
-            type: type,
-            initializer: initializer,
+        return Statement(
+            kind: .varDecl(name: name, type: type, initializer: initializer),
             range: startToken.range.extended(to: initializer.range)
         )
     }
@@ -755,8 +747,8 @@ extension Parser {
 
         let endRange = value?.range ?? startToken.range
 
-        return .returnStmt(
-            value: value,
+        return Statement(
+            kind: .returnStmt(value: value),
             range: startToken.range.extended(to: endRange)
         )
     }
@@ -789,10 +781,8 @@ extension Parser {
 
         let endRange = elseBranch?.range ?? thenBranch.range
 
-        return .ifStmt(
-            condition: condition,
-            thenBranch: thenBranch,
-            elseBranch: elseBranch,
+        return Statement(
+            kind: .ifStmt(condition: condition, thenBranch: thenBranch, elseBranch: elseBranch),
             range: startToken.range.extended(to: endRange)
         )
     }
@@ -833,11 +823,8 @@ extension Parser {
 
         let body = try parseBlockStmt()
 
-        return .forStmt(
-            initializer: initializer,
-            condition: condition,
-            increment: increment,
-            body: body,
+        return Statement(
+            kind: .forStmt(initializer: initializer, condition: condition, increment: increment, body: body),
             range: startToken.range.extended(to: body.range)
         )
     }
@@ -867,9 +854,8 @@ extension Parser {
 
         let endToken = try consume(.rightBrace, message: "Expected '}' after switch cases")
 
-        return .switchStmt(
-            subject: subject,
-            cases: cases,
+        return Statement(
+            kind: .switchStmt(subject: subject, cases: cases),
             range: startToken.range.extended(to: endToken.range)
         )
     }
@@ -886,7 +872,7 @@ extension Parser {
             body = try parseBlockStmt()
         } else {
             let expr = try parseExpression()
-            body = .expression(expr: expr, range: expr.range)
+            body = Statement(kind: .expression(expr: expr), range: expr.range)
         }
 
         return SwitchCase(
@@ -901,7 +887,7 @@ extension Parser {
 
         if check(.semicolon) { advance() }
 
-        return .expression(expr: expr, range: expr.range)
+        return Statement(kind: .expression(expr: expr), range: expr.range)
     }
 }
 ```
@@ -936,10 +922,8 @@ extension Parser {
             default: fatalError("Unexpected assignment operator")
             }
 
-            return .binary(
-                left: expr,
-                op: op,
-                right: value,
+            return Expression(
+                kind: .binary(left: expr, op: op, right: value),
                 range: expr.range.extended(to: value.range)
             )
         }
@@ -953,10 +937,8 @@ extension Parser {
         while match(.pipePipe) {
             skipNewlines()
             let right = try parseAnd()
-            expr = .binary(
-                left: expr,
-                op: .or,
-                right: right,
+            expr = Expression(
+                kind: .binary(left: expr, op: .or, right: right),
                 range: expr.range.extended(to: right.range)
             )
         }
@@ -970,10 +952,8 @@ extension Parser {
         while match(.ampersandAmpersand) {
             skipNewlines()
             let right = try parseEquality()
-            expr = .binary(
-                left: expr,
-                op: .and,
-                right: right,
+            expr = Expression(
+                kind: .binary(left: expr, op: .and, right: right),
                 range: expr.range.extended(to: right.range)
             )
         }
@@ -991,10 +971,8 @@ extension Parser {
 
             let op: BinaryOperator = opToken.kind == .equalEqual ? .equal : .notEqual
 
-            expr = .binary(
-                left: expr,
-                op: op,
-                right: right,
+            expr = Expression(
+                kind: .binary(left: expr, op: op, right: right),
                 range: expr.range.extended(to: right.range)
             )
         }
@@ -1019,10 +997,8 @@ extension Parser {
             default: fatalError("Unexpected comparison operator")
             }
 
-            expr = .binary(
-                left: expr,
-                op: op,
-                right: right,
+            expr = Expression(
+                kind: .binary(left: expr, op: op, right: right),
                 range: expr.range.extended(to: right.range)
             )
         }
@@ -1040,10 +1016,8 @@ extension Parser {
 
             let op: BinaryOperator = opToken.kind == .plus ? .add : .subtract
 
-            expr = .binary(
-                left: expr,
-                op: op,
-                right: right,
+            expr = Expression(
+                kind: .binary(left: expr, op: op, right: right),
                 range: expr.range.extended(to: right.range)
             )
         }
@@ -1067,10 +1041,8 @@ extension Parser {
             default: fatalError("Unexpected multiplication operator")
             }
 
-            expr = .binary(
-                left: expr,
-                op: op,
-                right: right,
+            expr = Expression(
+                kind: .binary(left: expr, op: op, right: right),
                 range: expr.range.extended(to: right.range)
             )
         }
@@ -1085,9 +1057,8 @@ extension Parser {
 
             let op: UnaryOperator = opToken.kind == .bang ? .not : .negate
 
-            return .unary(
-                op: op,
-                operand: operand,
+            return Expression(
+                kind: .unary(op: op, operand: operand),
                 range: opToken.range.extended(to: operand.range)
             )
         }
@@ -1107,14 +1078,13 @@ extension Parser {
                 }
                 let nameToken = advance()
 
-                expr = .memberAccess(
-                    object: expr,
-                    member: name,
+                expr = Expression(
+                    kind: .memberAccess(object: expr, member: name),
                     range: expr.range.extended(to: nameToken.range)
                 )
             } else if check(.leftBrace) {
                 // Check if this is a struct initialization: Identifier { ... }
-                if case .identifier(let typeName) = expr {
+                if case .identifier(let typeName) = expr.kind {
                     expr = try parseStructInit(typeName: typeName, startRange: expr.range)
                 } else {
                     break
@@ -1142,9 +1112,8 @@ extension Parser {
 
         let endToken = try consume(.rightParen, message: "Expected ')' after arguments")
 
-        return .call(
-            callee: callee,
-            arguments: arguments,
+        return Expression(
+            kind: .call(callee: callee, arguments: arguments),
             range: callee.range.extended(to: endToken.range)
         )
     }
@@ -1180,9 +1149,8 @@ extension Parser {
 
         let endToken = try consume(.rightBrace, message: "Expected '}' after struct fields")
 
-        return .structInit(
-            typeName: typeName,
-            fields: fields,
+        return Expression(
+            kind: .structInit(typeName: typeName, fields: fields),
             range: startRange.extended(to: endToken.range)
         )
     }
@@ -1193,11 +1161,11 @@ extension Parser {
         switch token.kind {
         case .intLiteral(let value):
             advance()
-            return .intLiteral(value: value, range: token.range)
+            return Expression(kind: .intLiteral(value: value), range: token.range)
 
         case .floatLiteral(let value):
             advance()
-            return .floatLiteral(value: value, range: token.range)
+            return Expression(kind: .floatLiteral(value: value), range: token.range)
 
         case .stringLiteral(let value):
             advance()
@@ -1205,19 +1173,19 @@ extension Parser {
             if check(.stringInterpolationStart) {
                 return try parseStringInterpolation(firstPart: value, startRange: token.range)
             }
-            return .stringLiteral(value: value, range: token.range)
+            return Expression(kind: .stringLiteral(value: value), range: token.range)
 
         case .keyword(.true):
             advance()
-            return .boolLiteral(value: true, range: token.range)
+            return Expression(kind: .boolLiteral(value: true), range: token.range)
 
         case .keyword(.false):
             advance()
-            return .boolLiteral(value: false, range: token.range)
+            return Expression(kind: .boolLiteral(value: false), range: token.range)
 
         case .identifier(let name):
             advance()
-            return .identifier(name: name, range: token.range)
+            return Expression(kind: .identifier(name: name), range: token.range)
 
         case .leftParen:
             advance()
@@ -1258,8 +1226,8 @@ extension Parser {
             }
         }
 
-        return .stringInterpolation(
-            parts: parts,
+        return Expression(
+            kind: .stringInterpolation(parts: parts),
             range: startRange.extended(to: lastRange)
         )
     }
@@ -1270,12 +1238,12 @@ extension Parser {
 
 ## Usage Examples
 
-### Clean Pattern Matching (No Casting!)
+### Clean Pattern Matching
 
 ```swift
-// Type checking an expression - exhaustive switch, no `as` casting
+// Type checking an expression - exhaustive switch on kind
 func checkExpression(_ expr: Expression) -> SlangType {
-    switch expr {
+    switch expr.kind {
     case .intLiteral:
         return .int
 
@@ -1288,33 +1256,41 @@ func checkExpression(_ expr: Expression) -> SlangType {
     case .boolLiteral:
         return .bool
 
-    case .identifier(let name, let range):
-        return lookupVariable(name, at: range)
+    case .identifier(let name):
+        return lookupVariable(name, at: expr.range)
 
-    case .binary(let left, let op, let right, _):
+    case .binary(let left, let op, let right):
         return checkBinary(left: left, op: op, right: right)
 
-    case .unary(let op, let operand, _):
+    case .unary(let op, let operand):
         return checkUnary(op: op, operand: operand)
 
-    case .call(let callee, let arguments, let range):
-        return checkCall(callee: callee, arguments: arguments, at: range)
+    case .call(let callee, let arguments):
+        return checkCall(callee: callee, arguments: arguments, at: expr.range)
 
-    case .memberAccess(let object, let member, let range):
-        return checkMemberAccess(object: object, member: member, at: range)
+    case .memberAccess(let object, let member):
+        return checkMemberAccess(object: object, member: member, at: expr.range)
 
-    case .structInit(let typeName, let fields, let range):
-        return checkStructInit(typeName: typeName, fields: fields, at: range)
+    case .structInit(let typeName, let fields):
+        return checkStructInit(typeName: typeName, fields: fields, at: expr.range)
     }
     // Compiler enforces all cases are handled!
 }
 ```
 
-### Built-in Type Resolution (No Magic Strings!)
+### Easy Range Access
+
+```swift
+// No pattern matching needed for common properties
+func reportError(for expr: Expression, message: String) {
+    diagnostics.append(Diagnostic.error(message, at: expr.range))
+}
+```
+
+### Built-in Type Resolution
 
 ```swift
 func resolveType(_ annotation: TypeAnnotation) -> SlangType {
-    // Use RawRepresentable enum instead of magic strings
     if let builtin = annotation.asBuiltin {
         switch builtin {
         case .int: return .int
@@ -1325,16 +1301,7 @@ func resolveType(_ annotation: TypeAnnotation) -> SlangType {
         }
     }
 
-    // Check user-defined types
-    if let structInfo = lookupStruct(annotation.name) {
-        return .structType(name: annotation.name)
-    }
-    if let enumInfo = lookupEnum(annotation.name) {
-        return .enumType(name: annotation.name)
-    }
-
-    error("Unknown type '\(annotation.name)'", at: annotation.range)
-    return .error
+    // Check user-defined types...
 }
 ```
 
@@ -1353,47 +1320,29 @@ func add(a: Int, b: Int) -> Int {
 
 **Expected AST:**
 ```swift
-.function(
-    name: "add",
-    parameters: [Parameter(name: "a", ...), Parameter(name: "b", ...)],
-    returnType: TypeAnnotation(name: "Int", ...),
-    body: .block(statements: [
-        .returnStmt(value: .binary(
-            left: .identifier(name: "a", ...),
-            op: .add,
-            right: .identifier(name: "b", ...),
+Declaration(
+    kind: .function(
+        name: "add",
+        parameters: [...],
+        returnType: TypeAnnotation(name: "Int", ...),
+        body: Statement(
+            kind: .block(statements: [
+                Statement(
+                    kind: .returnStmt(value: Expression(
+                        kind: .binary(
+                            left: Expression(kind: .identifier(name: "a"), ...),
+                            op: .add,
+                            right: Expression(kind: .identifier(name: "b"), ...)
+                        ),
+                        ...
+                    )),
+                    ...
+                )
+            ]),
             ...
-        ), ...)
-    ], ...),
-    ...
-)
-```
-
-### Test 2: Pattern Matching in Switch
-
-**Input:**
-```slang
-switch (dir) {
-    Direction.up -> print("up")
-    Direction.down -> print("down")
-}
-```
-
-**Expected AST:**
-```swift
-.switchStmt(
-    subject: .identifier(name: "dir", ...),
-    cases: [
-        SwitchCase(
-            pattern: .memberAccess(object: .identifier(name: "Direction", ...), member: "up", ...),
-            body: .expression(expr: .call(...), ...)
-        ),
-        SwitchCase(
-            pattern: .memberAccess(object: .identifier(name: "Direction", ...), member: "down", ...),
-            body: .expression(expr: .call(...), ...)
         )
-    ],
-    ...
+    ),
+    range: ...
 )
 ```
 
@@ -1401,12 +1350,13 @@ switch (dir) {
 
 ## Acceptance Criteria
 
-- [ ] AST.swift uses enums with associated values for Expression, Statement, Declaration
+- [ ] AST uses Kind + wrapper struct pattern for Expression, Statement, Declaration
+- [ ] Common `range` property accessible without pattern matching
+- [ ] ExpressionKind, StatementKind, DeclarationKind enums are exhaustive
 - [ ] BuiltinTypeName enum replaces magic strings
-- [ ] All pattern matching is exhaustive (no default cases needed)
 - [ ] No `as` or `as?` casting anywhere
-- [ ] Parser.swift creates enum cases directly
-- [ ] All existing test cases still pass
+- [ ] Parser creates wrapper structs with kind and range
+- [ ] All test cases pass
 - [ ] `swift build` succeeds
 
 ---

@@ -160,9 +160,9 @@ public class Interpreter {
     private var environment: RuntimeEnvironment
 
     // Stored declarations for function lookup
-    private var functions: [String: Declaration] = [:]  // Only .function cases
-    private var structs: [String: Declaration] = [:]     // Only .structDecl cases
-    private var enums: [String: Declaration] = [:]       // Only .enumDecl cases
+    private var functions: [String: Declaration] = [:]
+    private var structs: [String: Declaration] = [:]
+    private var enums: [String: Declaration] = [:]
 
     public init() {
         self.globalEnv = RuntimeEnvironment()
@@ -180,7 +180,7 @@ public class Interpreter {
 
         // Find and call main()
         guard let mainDecl = functions["main"],
-              case .function(_, let parameters, _, let body, _) = mainDecl,
+              case .function(_, let parameters, _, let body) = mainDecl.kind,
               parameters.isEmpty else {
             throw RuntimeError("No main() function found")
         }
@@ -191,12 +191,12 @@ public class Interpreter {
     // MARK: - Declaration Collection
 
     private func collectDeclaration(_ decl: Declaration) {
-        switch decl {
-        case .function(let name, _, _, _, _):
+        switch decl.kind {
+        case .function(let name, _, _, _):
             functions[name] = decl
-        case .structDecl(let name, _, _):
+        case .structDecl(let name, _):
             structs[name] = decl
-        case .enumDecl(let name, _, _):
+        case .enumDecl(let name, _):
             enums[name] = decl
         }
     }
@@ -240,8 +240,8 @@ public class Interpreter {
 
 extension Interpreter {
     private func executeStatement(_ stmt: Statement) throws {
-        switch stmt {
-        case .block(let statements, _):
+        switch stmt.kind {
+        case .block(let statements):
             let childEnv = environment.createChild()
             let savedEnv = environment
             environment = childEnv
@@ -250,14 +250,14 @@ extension Interpreter {
             }
             environment = savedEnv
 
-        case .varDecl(let name, _, let initializer, _):
+        case .varDecl(let name, _, let initializer):
             let value = try evaluate(initializer)
             environment.define(name, value: value)
 
-        case .expression(let expr, _):
+        case .expression(let expr):
             _ = try evaluate(expr)
 
-        case .returnStmt(let value, _):
+        case .returnStmt(let value):
             let retValue: Value
             if let val = value {
                 retValue = try evaluate(val)
@@ -266,14 +266,14 @@ extension Interpreter {
             }
             throw ReturnValue(value: retValue)
 
-        case .ifStmt(let condition, let thenBranch, let elseBranch, _):
+        case .ifStmt(let condition, let thenBranch, let elseBranch):
             try executeIf(condition: condition, thenBranch: thenBranch, elseBranch: elseBranch)
 
-        case .forStmt(let initializer, let condition, let increment, let body, _):
+        case .forStmt(let initializer, let condition, let increment, let body):
             try executeFor(initializer: initializer, condition: condition, increment: increment, body: body)
 
-        case .switchStmt(let subject, let cases, let range):
-            try executeSwitch(subject: subject, cases: cases, range: range)
+        case .switchStmt(let subject, let cases):
+            try executeSwitch(subject: subject, cases: cases, range: stmt.range)
         }
     }
 
@@ -305,8 +305,8 @@ extension Interpreter {
         environment = forEnv
 
         // Initializer
-        if let init = initializer {
-            try executeStatement(init)
+        if let initStmt = initializer {
+            try executeStatement(initStmt)
         }
 
         // Loop
@@ -363,39 +363,39 @@ extension Interpreter {
 
 extension Interpreter {
     private func evaluate(_ expr: Expression) throws -> Value {
-        switch expr {
-        case .intLiteral(let value, _):
+        switch expr.kind {
+        case .intLiteral(let value):
             return .int(value)
 
-        case .floatLiteral(let value, _):
+        case .floatLiteral(let value):
             return .float(value)
 
-        case .stringLiteral(let value, _):
+        case .stringLiteral(let value):
             return .string(value)
 
-        case .boolLiteral(let value, _):
+        case .boolLiteral(let value):
             return .bool(value)
 
-        case .stringInterpolation(let parts, _):
+        case .stringInterpolation(let parts):
             return try evaluateStringInterpolation(parts: parts)
 
-        case .identifier(let name, let range):
-            return try evaluateIdentifier(name: name, range: range)
+        case .identifier(let name):
+            return try evaluateIdentifier(name: name, range: expr.range)
 
-        case .binary(let left, let op, let right, let range):
-            return try evaluateBinary(left: left, op: op, right: right, range: range)
+        case .binary(let left, let op, let right):
+            return try evaluateBinary(left: left, op: op, right: right, range: expr.range)
 
-        case .unary(let op, let operand, let range):
-            return try evaluateUnary(op: op, operand: operand, range: range)
+        case .unary(let op, let operand):
+            return try evaluateUnary(op: op, operand: operand, range: expr.range)
 
-        case .call(let callee, let arguments, let range):
-            return try evaluateCall(callee: callee, arguments: arguments, range: range)
+        case .call(let callee, let arguments):
+            return try evaluateCall(callee: callee, arguments: arguments, range: expr.range)
 
-        case .memberAccess(let object, let member, let range):
-            return try evaluateMemberAccess(object: object, member: member, range: range)
+        case .memberAccess(let object, let member):
+            return try evaluateMemberAccess(object: object, member: member, range: expr.range)
 
-        case .structInit(let typeName, let fields, let range):
-            return try evaluateStructInit(typeName: typeName, fields: fields, range: range)
+        case .structInit(let typeName, let fields):
+            return try evaluateStructInit(typeName: typeName, fields: fields, range: expr.range)
         }
     }
 
@@ -552,7 +552,7 @@ extension Interpreter {
     }
 
     private func evaluateAssignment(left: Expression, op: BinaryOperator, right: Expression, range: SourceRange) throws -> Value {
-        guard case .identifier(let name, let identRange) = left else {
+        guard case .identifier(let name) = left.kind else {
             throw RuntimeError("Invalid assignment target", at: left.range)
         }
 
@@ -562,7 +562,7 @@ extension Interpreter {
         // Compound assignment
         if op != .assign {
             guard let currentValue = environment.get(name) else {
-                throw RuntimeError("Undefined variable '\(name)'", at: identRange)
+                throw RuntimeError("Undefined variable '\(name)'", at: left.range)
             }
 
             switch op {
@@ -597,7 +597,7 @@ extension Interpreter {
         }
 
         if !environment.assign(name, value: newValue) {
-            throw RuntimeError("Undefined variable '\(name)'", at: identRange)
+            throw RuntimeError("Undefined variable '\(name)'", at: left.range)
         }
 
         return newValue
@@ -626,7 +626,7 @@ extension Interpreter {
 
     private func evaluateCall(callee: Expression, arguments: [Expression], range: SourceRange) throws -> Value {
         // Get the function name
-        guard case .identifier(let name, let identRange) = callee else {
+        guard case .identifier(let name) = callee.kind else {
             throw RuntimeError("Invalid call target", at: callee.range)
         }
 
@@ -637,8 +637,8 @@ extension Interpreter {
 
         // User-defined function
         guard let funcDecl = functions[name],
-              case .function(_, let parameters, _, let body, _) = funcDecl else {
-            throw RuntimeError("Undefined function '\(name)'", at: identRange)
+              case .function(_, let parameters, _, let body) = funcDecl.kind else {
+            throw RuntimeError("Undefined function '\(name)'", at: callee.range)
         }
 
         // Evaluate arguments
@@ -673,7 +673,7 @@ extension Interpreter {
         if case .enumCase(let typeName, _) = objectVal {
             // Check that the case exists
             guard let enumDecl = enums[typeName],
-                  case .enumDecl(_, let cases, _) = enumDecl else {
+                  case .enumDecl(_, let cases) = enumDecl.kind else {
                 throw RuntimeError("Unknown enum '\(typeName)'", at: object.range)
             }
             guard cases.contains(where: { $0.name == member }) else {
@@ -695,7 +695,7 @@ extension Interpreter {
 
     private func evaluateStructInit(typeName: String, fields: [FieldInit], range: SourceRange) throws -> Value {
         guard let structDecl = structs[typeName],
-              case .structDecl(_, let structFields, _) = structDecl else {
+              case .structDecl(_, let structFields) = structDecl.kind else {
             throw RuntimeError("Unknown struct '\(typeName)'", at: range)
         }
 
@@ -901,6 +901,8 @@ First quadrant
   - [ ] Switch statements
   - [ ] Return statements
   - [ ] Built-in print() function
+- [ ] Uses `expr.kind` and `stmt.kind` pattern matching
+- [ ] Accesses `expr.range` directly for error reporting
 - [ ] Proper scoping (local variables don't leak)
 - [ ] All test cases pass
 - [ ] `swift build` succeeds
