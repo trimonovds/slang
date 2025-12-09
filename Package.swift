@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "slang", targets: ["slang"]),
+        .executable(name: "slang-lsp", targets: ["slang-lsp"]),
         .library(name: "SlangCore", targets: ["SlangCore"]),
     ],
     dependencies: [
@@ -16,6 +17,12 @@ let package = Package(
             name: "slang",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                "SlangCore",
+            ]
+        ),
+        .executableTarget(
+            name: "slang-lsp",
+            dependencies: [
                 "SlangCore",
             ]
         ),
