@@ -553,6 +553,163 @@ struct TypeCheckerTests {
             }
         }
         """
-        expectTypeError(source, containing: "Switch expression subject must be an enum type")
+        expectTypeError(source, containing: "Switch expression subject must be an enum or union type")
+    }
+
+    // MARK: - Union Tests (v0.1.2)
+
+    @Test("Valid: Union with struct variants")
+    func validUnionStructs() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func main() {
+            var d: Dog = Dog { name: "Buddy" }
+            var pet: Pet = Pet.Dog(d)
+        }
+        """
+        try typeCheck(source)
+    }
+
+    @Test("Valid: Union with primitives")
+    func validUnionPrimitives() throws {
+        let source = """
+        union Value = Int | String
+
+        func main() {
+            var v1: Value = Value.Int(42)
+            var v2: Value = Value.String("hello")
+        }
+        """
+        try typeCheck(source)
+    }
+
+    @Test("Valid: Union switch exhaustive")
+    func validUnionSwitchExhaustive() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func main() {
+            var pet: Pet = Pet.Dog(Dog { name: "Buddy" })
+            switch (pet) {
+                Pet.Dog -> print("dog")
+                Pet.Cat -> print("cat")
+            }
+        }
+        """
+        try typeCheck(source)
+    }
+
+    @Test("Valid: Union switch expression")
+    func validUnionSwitchExpr() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func describePet(pet: Pet) -> String {
+            return switch (pet) {
+                Pet.Dog -> return "dog"
+                Pet.Cat -> return "cat"
+            }
+        }
+
+        func main() {
+            var pet: Pet = Pet.Dog(Dog { name: "Buddy" })
+            print(describePet(pet))
+        }
+        """
+        try typeCheck(source)
+    }
+
+    @Test("Error: Union switch non-exhaustive")
+    func errorUnionSwitchNonExhaustive() {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func main() {
+            var pet: Pet = Pet.Dog(Dog { name: "Buddy" })
+            switch (pet) {
+                Pet.Dog -> print("dog")
+            }
+        }
+        """
+        expectTypeError(source, containing: "Switch must be exhaustive. Missing variants: Cat")
+    }
+
+    @Test("Error: Invalid union variant")
+    func errorInvalidUnionVariant() {
+        let source = """
+        struct Dog { name: String }
+        union Pet = Dog
+
+        func main() {
+            var pet: Pet = Pet.Cat(Dog { name: "Buddy" })
+        }
+        """
+        expectTypeError(source, containing: "'Cat' is not a variant of union 'Pet'")
+    }
+
+    @Test("Error: Wrong type for union variant")
+    func errorWrongUnionVariantType() {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func main() {
+            var pet: Pet = Pet.Dog(Cat { name: "Whiskers" })
+        }
+        """
+        expectTypeError(source, containing: "does not match parameter type")
+    }
+
+    @Test("Error: Unknown type in union variant")
+    func errorUnknownTypeInUnion() {
+        let source = """
+        union Pet = Dog | Cat
+
+        func main() {
+        }
+        """
+        expectTypeError(source, containing: "Unknown type 'Dog' in union variant")
+    }
+
+    @Test("Error: Duplicate variant in union")
+    func errorDuplicateUnionVariant() {
+        let source = """
+        struct Dog { name: String }
+        union Pet = Dog | Dog
+
+        func main() {
+        }
+        """
+        expectTypeError(source, containing: "Duplicate variant 'Dog' in union 'Pet'")
+    }
+
+    @Test("Valid: Union with three variants")
+    func validUnionThreeVariants() throws {
+        let source = """
+        struct Success { value: Int }
+        struct Error { message: String }
+        struct Pending { id: Int }
+        union Result = Success | Error | Pending
+
+        func main() {
+            var r: Result = Result.Pending(Pending { id: 1 })
+            switch (r) {
+                Result.Success -> print("ok")
+                Result.Error -> print("err")
+                Result.Pending -> print("wait")
+            }
+        }
+        """
+        try typeCheck(source)
     }
 }

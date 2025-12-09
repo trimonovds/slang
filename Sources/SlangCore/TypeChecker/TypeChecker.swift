@@ -1,5 +1,14 @@
 // Sources/SlangCore/TypeChecker/TypeChecker.swift
 
+/// Helper extension for string manipulation
+internal extension String {
+    /// Convert the first character to lowercase
+    var lowercasedFirst: String {
+        guard let first = self.first else { return self }
+        return first.lowercased() + self.dropFirst()
+    }
+}
+
 /// Error thrown when type checking fails
 public struct TypeCheckError: Error, Sendable {
     public let diagnostics: [Diagnostic]
@@ -19,6 +28,7 @@ public final class TypeEnvironment: @unchecked Sendable {
     private var functions: [String: SlangType] = [:]
     private var structTypes: [String: StructTypeInfo] = [:]
     private var enumTypes: [String: EnumTypeInfo] = [:]
+    private var unionTypes: [String: UnionTypeInfo] = [:]
     private let parent: TypeEnvironment?
 
     public init(parent: TypeEnvironment? = nil) {
@@ -87,6 +97,19 @@ public final class TypeEnvironment: @unchecked Sendable {
         return parent?.lookupEnumType(name)
     }
 
+    // MARK: - Union Types
+
+    public func defineUnionType(_ info: UnionTypeInfo) {
+        unionTypes[info.name] = info
+    }
+
+    public func lookupUnionType(_ name: String) -> UnionTypeInfo? {
+        if let info = unionTypes[name] {
+            return info
+        }
+        return parent?.lookupUnionType(name)
+    }
+
     // MARK: - Scope
 
     public func createChild() -> TypeEnvironment {
@@ -133,6 +156,8 @@ public final class TypeChecker: @unchecked Sendable {
             registerStruct(name: name, fields: fields)
         case .enumDecl(let name, let cases):
             registerEnum(name: name, cases: cases)
+        case .unionDecl(let name, let variants):
+            registerUnion(name: name, variants: variants)
         }
     }
 
@@ -160,6 +185,17 @@ public final class TypeChecker: @unchecked Sendable {
         environment.defineEnumType(info)
     }
 
+    private func registerUnion(name: String, variants: [UnionVariant]) {
+        // Store placeholder - variant types will be resolved in checkUnion
+        let variantOrder = variants.map { $0.typeName }
+        var variantMap: [String: SlangType] = [:]
+        for variant in variants {
+            variantMap[variant.typeName] = .error  // Placeholder
+        }
+        let info = UnionTypeInfo(name: name, variants: variantMap, variantOrder: variantOrder)
+        environment.defineUnionType(info)
+    }
+
     // MARK: - Type Resolution
 
     private func resolveType(_ annotation: TypeAnnotation) -> SlangType {
@@ -180,8 +216,37 @@ public final class TypeChecker: @unchecked Sendable {
         if environment.lookupEnumType(annotation.name) != nil {
             return .enumType(name: annotation.name)
         }
+        if environment.lookupUnionType(annotation.name) != nil {
+            return .unionType(name: annotation.name)
+        }
 
         error("Unknown type '\(annotation.name)'", at: annotation.range)
+        return .error
+    }
+
+    /// Resolve a variant type name to a SlangType
+    private func resolveVariantType(_ typeName: String, at range: SourceRange) -> SlangType {
+        // Check built-in types
+        if let builtin = BuiltinTypeName(rawValue: typeName) {
+            return SlangType.from(builtin: builtin)
+        }
+
+        // Check struct types
+        if environment.lookupStructType(typeName) != nil {
+            return .structType(name: typeName)
+        }
+
+        // Check enum types
+        if environment.lookupEnumType(typeName) != nil {
+            return .enumType(name: typeName)
+        }
+
+        // Check other union types
+        if environment.lookupUnionType(typeName) != nil {
+            return .unionType(name: typeName)
+        }
+
+        error("Unknown type '\(typeName)' in union variant", at: range)
         return .error
     }
 
@@ -203,6 +268,8 @@ extension TypeChecker {
             checkStruct(name: name, fields: fields)
         case .enumDecl(let name, let cases):
             checkEnum(name: name, cases: cases)
+        case .unionDecl(let name, let variants):
+            checkUnion(name: name, variants: variants)
         }
     }
 
@@ -275,6 +342,30 @@ extension TypeChecker {
             }
             seenCases.insert(enumCase.name)
         }
+    }
+
+    private func checkUnion(name: String, variants: [UnionVariant]) {
+        var seenVariants = Set<String>()
+        var resolvedVariants: [String: SlangType] = [:]
+        var variantOrder: [String] = []
+
+        for variant in variants {
+            // Check for duplicate variant names
+            if seenVariants.contains(variant.typeName) {
+                error("Duplicate variant '\(variant.typeName)' in union '\(name)'", at: variant.range)
+                continue
+            }
+            seenVariants.insert(variant.typeName)
+            variantOrder.append(variant.typeName)
+
+            // Resolve the variant type
+            let variantType = resolveVariantType(variant.typeName, at: variant.range)
+            resolvedVariants[variant.typeName] = variantType
+        }
+
+        // Re-register with resolved types
+        let info = UnionTypeInfo(name: name, variants: resolvedVariants, variantOrder: variantOrder)
+        environment.defineUnionType(info)
     }
 }
 
@@ -432,8 +523,63 @@ extension TypeChecker {
                 let missing = missingCases.sorted().joined(separator: ", ")
                 error("Switch must be exhaustive. Missing cases: \(missing)", at: range)
             }
-        } else if subjectType != .error {
-            error("Switch subject must be an enum type, got '\(subjectType)'", at: subject.range)
+        }
+        // For union types, check exhaustiveness
+        else if case .unionType(let unionName) = subjectType {
+            guard let unionInfo = environment.lookupUnionType(unionName) else {
+                error("Unknown union type '\(unionName)'", at: subject.range)
+                return
+            }
+
+            var coveredVariants = Set<String>()
+
+            for switchCase in cases {
+                // Pattern should be UnionName.VariantName (MemberAccessExpr)
+                var boundVariableName: String? = nil
+                var boundVariableType: SlangType? = nil
+
+                if case .memberAccess(let object, let member) = switchCase.pattern.kind,
+                   case .identifier(let identName) = object.kind {
+                    if identName != unionName {
+                        error("Expected case of union '\(unionName)', got '\(identName)'", at: switchCase.pattern.range)
+                    } else if !unionInfo.variants.keys.contains(member) {
+                        error("'\(member)' is not a variant of union '\(unionName)'", at: switchCase.pattern.range)
+                    } else {
+                        if coveredVariants.contains(member) {
+                            error("Duplicate case '\(member)' in switch", at: switchCase.pattern.range)
+                        }
+                        coveredVariants.insert(member)
+
+                        // Bind the lowercase variant name to the underlying value type
+                        boundVariableName = member.lowercasedFirst
+                        boundVariableType = unionInfo.variants[member]
+                    }
+                } else {
+                    error("Invalid switch pattern for union", at: switchCase.pattern.range)
+                }
+
+                // Check the body with bound variable in scope
+                let caseEnv = environment.createChild()
+                let savedEnv = environment
+                environment = caseEnv
+
+                if let varName = boundVariableName, let varType = boundVariableType {
+                    environment.defineVariable(varName, type: varType)
+                }
+
+                checkStatement(switchCase.body)
+                environment = savedEnv
+            }
+
+            // Check exhaustiveness
+            let missingVariants = Set(unionInfo.variants.keys).subtracting(coveredVariants)
+            if !missingVariants.isEmpty {
+                let missing = missingVariants.sorted().joined(separator: ", ")
+                error("Switch must be exhaustive. Missing variants: \(missing)", at: range)
+            }
+        }
+        else if subjectType != .error {
+            error("Switch subject must be an enum or union type, got '\(subjectType)'", at: subject.range)
         }
     }
 }
@@ -502,6 +648,10 @@ extension TypeChecker {
         // Check if it's an enum type name (for qualified enum access)
         if environment.lookupEnumType(name) != nil {
             return .enumType(name: name)
+        }
+        // Check if it's a union type name (for qualified union construction)
+        if environment.lookupUnionType(name) != nil {
+            return .unionType(name: name)
         }
         error("Undefined variable '\(name)'", at: range)
         return .error
@@ -644,6 +794,20 @@ extension TypeChecker {
             return .enumType(name: enumName)
         }
 
+        // Union variant access: Pet.Dog returns a function (Dog) -> Pet
+        if case .unionType(let unionName) = objectType {
+            guard let unionInfo = environment.lookupUnionType(unionName) else {
+                error("Unknown union type '\(unionName)'", at: object.range)
+                return .error
+            }
+            guard let variantType = unionInfo.variants[member] else {
+                error("'\(member)' is not a variant of union '\(unionName)'", at: range)
+                return .error
+            }
+            // Return a function type that takes the variant's type and returns the union
+            return .function(params: [variantType], returnType: .unionType(name: unionName))
+        }
+
         // Struct field access: point.x
         if case .structType(let structName) = objectType {
             guard let structInfo = environment.lookupStructType(structName) else {
@@ -700,58 +864,122 @@ extension TypeChecker {
     private func checkSwitchExpr(subject: Expression, cases: [SwitchCase], range: SourceRange) -> SlangType {
         let subjectType = checkExpression(subject)
 
-        // Switch expression requires enum type
-        guard case .enumType(let enumName) = subjectType else {
-            if subjectType != .error {
-                error("Switch expression subject must be an enum type, got '\(subjectType)'", at: subject.range)
-            }
-            return .error
-        }
-
-        guard let enumInfo = environment.lookupEnumType(enumName) else {
-            error("Unknown enum type '\(enumName)'", at: subject.range)
-            return .error
-        }
-
         var coveredCases = Set<String>()
         var resultType: SlangType? = nil
+        var allCaseNames: Set<String> = []
+        var typeLabel: String = ""
 
-        for switchCase in cases {
-            // Validate pattern: should be EnumName.caseName
-            if case .memberAccess(let object, let member) = switchCase.pattern.kind,
-               case .identifier(let identName) = object.kind {
-                if identName != enumName {
-                    error("Expected case of enum '\(enumName)', got '\(identName)'", at: switchCase.pattern.range)
-                } else if !enumInfo.cases.contains(member) {
-                    error("'\(member)' is not a case of enum '\(enumName)'", at: switchCase.pattern.range)
-                } else {
-                    if coveredCases.contains(member) {
-                        error("Duplicate case '\(member)' in switch expression", at: switchCase.pattern.range)
-                    }
-                    coveredCases.insert(member)
-                }
-            } else {
-                error("Invalid switch pattern for enum", at: switchCase.pattern.range)
+        // Switch expression requires enum or union type
+        if case .enumType(let enumName) = subjectType {
+            guard let enumInfo = environment.lookupEnumType(enumName) else {
+                error("Unknown enum type '\(enumName)'", at: subject.range)
+                return .error
             }
+            allCaseNames = enumInfo.cases
+            typeLabel = "enum '\(enumName)'"
 
-            // Get the return type from the case body
-            let caseReturnType = getReturnTypeFromStatement(switchCase.body)
-
-            if caseReturnType == nil {
-                error("Switch expression case must return a value", at: switchCase.body.range)
-            } else if let caseType = caseReturnType, caseType != .error {
-                if let existingType = resultType {
-                    if existingType != caseType && existingType != .error {
-                        error("Switch expression cases must all return the same type. Expected '\(existingType)', got '\(caseType)'", at: switchCase.body.range)
+            for switchCase in cases {
+                // Validate pattern: should be EnumName.caseName
+                if case .memberAccess(let object, let member) = switchCase.pattern.kind,
+                   case .identifier(let identName) = object.kind {
+                    if identName != enumName {
+                        error("Expected case of \(typeLabel), got '\(identName)'", at: switchCase.pattern.range)
+                    } else if !enumInfo.cases.contains(member) {
+                        error("'\(member)' is not a case of \(typeLabel)", at: switchCase.pattern.range)
+                    } else {
+                        if coveredCases.contains(member) {
+                            error("Duplicate case '\(member)' in switch expression", at: switchCase.pattern.range)
+                        }
+                        coveredCases.insert(member)
                     }
                 } else {
-                    resultType = caseType
+                    error("Invalid switch pattern for enum", at: switchCase.pattern.range)
+                }
+
+                // Get the return type from the case body
+                let caseReturnType = getReturnTypeFromStatement(switchCase.body)
+
+                if caseReturnType == nil {
+                    error("Switch expression case must return a value", at: switchCase.body.range)
+                } else if let caseType = caseReturnType, caseType != .error {
+                    if let existingType = resultType {
+                        if existingType != caseType && existingType != .error {
+                            error("Switch expression cases must all return the same type. Expected '\(existingType)', got '\(caseType)'", at: switchCase.body.range)
+                        }
+                    } else {
+                        resultType = caseType
+                    }
                 }
             }
+        }
+        else if case .unionType(let unionName) = subjectType {
+            guard let unionInfo = environment.lookupUnionType(unionName) else {
+                error("Unknown union type '\(unionName)'", at: subject.range)
+                return .error
+            }
+            allCaseNames = Set(unionInfo.variants.keys)
+            typeLabel = "union '\(unionName)'"
+
+            for switchCase in cases {
+                // Validate pattern: should be UnionName.VariantName
+                var boundVariableName: String? = nil
+                var boundVariableType: SlangType? = nil
+
+                if case .memberAccess(let object, let member) = switchCase.pattern.kind,
+                   case .identifier(let identName) = object.kind {
+                    if identName != unionName {
+                        error("Expected case of \(typeLabel), got '\(identName)'", at: switchCase.pattern.range)
+                    } else if !unionInfo.variants.keys.contains(member) {
+                        error("'\(member)' is not a variant of \(typeLabel)", at: switchCase.pattern.range)
+                    } else {
+                        if coveredCases.contains(member) {
+                            error("Duplicate case '\(member)' in switch expression", at: switchCase.pattern.range)
+                        }
+                        coveredCases.insert(member)
+
+                        // Bind the lowercase variant name to the underlying value type
+                        boundVariableName = member.lowercasedFirst
+                        boundVariableType = unionInfo.variants[member]
+                    }
+                } else {
+                    error("Invalid switch pattern for union", at: switchCase.pattern.range)
+                }
+
+                // Get the return type from the case body with bound variable in scope
+                let caseEnv = environment.createChild()
+                let savedEnv = environment
+                environment = caseEnv
+
+                if let varName = boundVariableName, let varType = boundVariableType {
+                    environment.defineVariable(varName, type: varType)
+                }
+
+                let caseReturnType = getReturnTypeFromStatement(switchCase.body)
+
+                if caseReturnType == nil {
+                    error("Switch expression case must return a value", at: switchCase.body.range)
+                } else if let caseType = caseReturnType, caseType != .error {
+                    if let existingType = resultType {
+                        if existingType != caseType && existingType != .error {
+                            error("Switch expression cases must all return the same type. Expected '\(existingType)', got '\(caseType)'", at: switchCase.body.range)
+                        }
+                    } else {
+                        resultType = caseType
+                    }
+                }
+
+                environment = savedEnv
+            }
+        }
+        else {
+            if subjectType != .error {
+                error("Switch expression subject must be an enum or union type, got '\(subjectType)'", at: subject.range)
+            }
+            return .error
         }
 
         // Check exhaustiveness
-        let missingCases = enumInfo.cases.subtracting(coveredCases)
+        let missingCases = allCaseNames.subtracting(coveredCases)
         if !missingCases.isEmpty {
             let missing = missingCases.sorted().joined(separator: ", ")
             error("Switch expression must be exhaustive. Missing cases: \(missing)", at: range)

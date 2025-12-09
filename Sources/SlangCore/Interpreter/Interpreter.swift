@@ -32,6 +32,7 @@ public final class Interpreter: @unchecked Sendable {
     private var functions: [String: Declaration] = [:]
     private var structs: [String: Declaration] = [:]
     private var enums: [String: Declaration] = [:]
+    private var unions: [String: Declaration] = [:]
 
     /// Handler for print() output. Defaults to printing to stdout.
     private let printHandler: (String) -> Void
@@ -79,6 +80,8 @@ public final class Interpreter: @unchecked Sendable {
             structs[name] = decl
         case .enumDecl(let name, _):
             enums[name] = decl
+        case .unionDecl(let name, _):
+            unions[name] = decl
         }
     }
 
@@ -217,8 +220,38 @@ extension Interpreter {
         for switchCase in cases {
             let patternValue = try evaluate(switchCase.pattern)
 
-            if subjectValue == patternValue {
+            // Match based on type of subject
+            var matches = false
+            var boundValue: Value? = nil
+            var boundName: String? = nil
+
+            switch (subjectValue, patternValue) {
+            case (.enumCase(let t1, let c1), .enumCase(let t2, let c2)):
+                matches = t1 == t2 && c1 == c2
+            case (.unionInstance(let t1, let v1, let wrappedValue), .unionInstance(let t2, let v2, _)):
+                // Match on union type and variant, extract wrapped value for binding
+                matches = t1 == t2 && v1 == v2
+                if matches {
+                    boundValue = wrappedValue
+                    boundName = v1.lowercasedFirst
+                }
+            default:
+                matches = subjectValue == patternValue
+            }
+
+            if matches {
+                // Create a child environment for the case body
+                let caseEnv = environment.createChild()
+                let savedEnv = environment
+                environment = caseEnv
+
+                // Bind the extracted union value if applicable
+                if let name = boundName, let value = boundValue {
+                    environment.define(name, value: value)
+                }
+
                 try executeStatement(switchCase.body)
+                environment = savedEnv
                 return
             }
         }
@@ -295,6 +328,12 @@ extension Interpreter {
         if enums[name] != nil {
             // Return a placeholder - actual case will be accessed via member access
             return .enumCase(typeName: name, caseName: "")
+        }
+
+        // Check for union type (used in union construction like Pet.Dog)
+        if unions[name] != nil {
+            // Return a placeholder - actual variant will be constructed via call
+            return .unionInstance(unionType: name, variantName: "", value: .void)
         }
 
         throw RuntimeError("Undefined variable '\(name)'", at: range)
@@ -497,6 +536,19 @@ extension Interpreter {
     }
 
     private func evaluateCall(callee: Expression, arguments: [Expression], range: SourceRange) throws -> Value {
+        // First, check if this is a union constructor call: Pet.Dog(...)
+        if case .memberAccess(let object, let variantName) = callee.kind {
+            let objectVal = try evaluate(object)
+            if case .unionInstance(let unionType, _, _) = objectVal {
+                // This is a union construction
+                guard arguments.count == 1 else {
+                    throw RuntimeError("Union constructor expects exactly 1 argument", at: range)
+                }
+                let argValue = try evaluate(arguments[0])
+                return .unionInstance(unionType: unionType, variantName: variantName, value: argValue)
+            }
+        }
+
         // Get the function name
         guard case .identifier(let name) = callee.kind else {
             throw RuntimeError("Invalid call target", at: callee.range)
@@ -554,6 +606,19 @@ extension Interpreter {
             return .enumCase(typeName: typeName, caseName: member)
         }
 
+        // Union variant "constructor" access: Pet.Dog
+        if case .unionInstance(let unionType, _, _) = objectVal {
+            guard let unionDecl = unions[unionType],
+                  case .unionDecl(_, let variants) = unionDecl.kind else {
+                throw RuntimeError("Unknown union '\(unionType)'", at: object.range)
+            }
+            guard variants.contains(where: { $0.typeName == member }) else {
+                throw RuntimeError("Union '\(unionType)' has no variant '\(member)'", at: range)
+            }
+            // Return a constructor placeholder that will be called
+            return .unionInstance(unionType: unionType, variantName: member, value: .void)
+        }
+
         // Struct field access: point.x
         if case .structInstance(let typeName, let fields) = objectVal {
             guard let value = fields[member] else {
@@ -594,13 +659,44 @@ extension Interpreter {
         for switchCase in cases {
             let patternValue = try evaluate(switchCase.pattern)
 
-            if subjectValue == patternValue {
+            // Match based on type of subject
+            var matches = false
+            var boundValue: Value? = nil
+            var boundName: String? = nil
+
+            switch (subjectValue, patternValue) {
+            case (.enumCase(let t1, let c1), .enumCase(let t2, let c2)):
+                matches = t1 == t2 && c1 == c2
+            case (.unionInstance(let t1, let v1, let wrappedValue), .unionInstance(let t2, let v2, _)):
+                // Match on union type and variant, extract wrapped value for binding
+                matches = t1 == t2 && v1 == v2
+                if matches {
+                    boundValue = wrappedValue
+                    boundName = v1.lowercasedFirst
+                }
+            default:
+                matches = subjectValue == patternValue
+            }
+
+            if matches {
+                // Create a child environment for the case body
+                let caseEnv = environment.createChild()
+                let savedEnv = environment
+                environment = caseEnv
+
+                // Bind the extracted union value if applicable
+                if let name = boundName, let value = boundValue {
+                    environment.define(name, value: value)
+                }
+
                 // Execute the case body and capture the return value
                 do {
                     try executeStatement(switchCase.body)
                     // If we get here without a return, that's an error
+                    environment = savedEnv
                     throw RuntimeError("Switch expression case did not return a value", at: switchCase.body.range)
                 } catch let returnValue as ReturnValue {
+                    environment = savedEnv
                     return returnValue.value
                 }
             }

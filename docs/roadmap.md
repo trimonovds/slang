@@ -279,7 +279,7 @@ Phase 6: Testing
 
 | Phase | Feature | Description |
 |-------|---------|-------------|
-| 7 | Unions | `union Pet = Dog \| Cat` with pattern matching |
+| 7 | ~~Unions~~ | ~~`union Pet = Dog \| Cat` with pattern matching~~ (v0.1.2) |
 | 8 | Methods | Functions on structs |
 | 9 | Modules | Directory-based module system, imports |
 | 10 | Generics | Simple `<T>` parameter |
@@ -490,3 +490,145 @@ func main() {
 - TypeChecker tests for error cases (non-exhaustive, type mismatch, missing return)
 - Interpreter tests for execution
 - Example test: `switch_expr.slang`
+
+## v0.1.2 - Union Types
+
+**Goal:** Add union types for grouping existing types.
+
+### New Feature: Unions
+
+Unions allow creating a type that can hold values from multiple existing types (structs, enums, or primitives):
+
+```slang
+struct Dog { name: String }
+struct Cat { name: String }
+union Pet = Dog | Cat
+
+union Value = Int | String
+```
+
+### Value Creation
+
+Values are created using qualified constructors:
+
+```slang
+var pet: Pet = Pet.Dog(Dog { name: "Buddy" })
+var val: Value = Value.Int(42)
+```
+
+### Pattern Matching
+
+Switch statements and expressions work with unions using exhaustiveness checking:
+
+```slang
+switch (pet) {
+    Pet.Dog -> print("woof")
+    Pet.Cat -> print("meow")
+}
+
+var sound: String = switch (pet) {
+    Pet.Dog -> return "woof"
+    Pet.Cat -> return "meow"
+}
+```
+
+### Pattern Binding
+
+In switch cases for unions, the lowercase variant name is automatically bound to the underlying value:
+
+```slang
+switch (pet) {
+    Pet.Dog -> print("Dog: \(dog.name)")  // 'dog' is bound to the Dog value
+    Pet.Cat -> print("Cat: \(cat.name)")  // 'cat' is bound to the Cat value
+}
+
+// Works with primitives too
+union Value = Int | String
+var v: Value = Value.Int(42)
+switch (v) {
+    Value.Int -> print("number: \(int)")     // 'int' is bound
+    Value.String -> print("text: \(string)") // 'string' is bound
+}
+
+// Also works in switch expressions
+func getPetName(pet: Pet) -> String {
+    return switch (pet) {
+        Pet.Dog -> return dog.name
+        Pet.Cat -> return cat.name
+    }
+}
+```
+
+### Example Program
+
+```slang
+struct Dog { name: String }
+struct Cat { name: String }
+union Pet = Dog | Cat
+
+union Value = Int | String
+
+func describePet(pet: Pet) -> String {
+    return switch (pet) {
+        Pet.Dog -> return "dog"
+        Pet.Cat -> return "cat"
+    }
+}
+
+func getPetName(pet: Pet) -> String {
+    return switch (pet) {
+        Pet.Dog -> return dog.name
+        Pet.Cat -> return cat.name
+    }
+}
+
+func main() {
+    var myDog: Dog = Dog { name: "Buddy" }
+    var pet: Pet = Pet.Dog(myDog)
+    print("Pet is: \(describePet(pet))")
+
+    // Pattern binding: access the underlying Dog value via 'dog'
+    switch (pet) {
+        Pet.Dog -> print("It's a dog named \(dog.name)!")
+        Pet.Cat -> print("It's a cat named \(cat.name)!")
+    }
+
+    var val: Value = Value.Int(42)
+    switch (val) {
+        Value.Int -> print("integer: \(int)")
+        Value.String -> print("string: \(string)")
+    }
+
+    var myCat: Cat = Cat { name: "Whiskers" }
+    var pet2: Pet = Pet.Cat(myCat)
+    print("Pet 2 name: \(getPetName(pet2))")
+}
+```
+
+Expected output:
+```
+Pet is: dog
+It's a dog named Buddy!
+integer: 42
+Pet 2 name: Whiskers
+```
+
+### Changes
+
+| Component | Change |
+|-----------|--------|
+| Lexer | Added `union` keyword, `\|` (pipe) token |
+| AST | Added `UnionVariant`, `DeclarationKind.unionDecl` |
+| Parser | Added `parseUnionDecl()` |
+| Type.swift | Added `SlangType.unionType`, `UnionTypeInfo` |
+| TypeChecker | Union registration, checking, member access, switch exhaustiveness, pattern binding in switch cases |
+| Value.swift | Added `Value.unionInstance` |
+| Interpreter | Union construction, switch matching, pattern binding (binds lowercase variant name to value) |
+
+### Tests Added
+
+- Lexer tests for union keyword and pipe operator
+- Parser tests for union declarations
+- TypeChecker tests for valid unions, error cases (unknown type, duplicate variant, non-exhaustive switch)
+- Interpreter tests for union construction, switch, switch expression
+- Pattern binding tests: struct field access, primitive binding, switch expressions with binding

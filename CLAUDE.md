@@ -49,11 +49,11 @@ Source → Lexer → Parser → TypeChecker → Interpreter
   - `Parser.swift` - Builds AST from tokens
 
 - **TypeChecker/** - Static type verification before execution
-  - `Type.swift` - `SlangType` enum (int, float, string, bool, void, structType, enumType, function, error)
+  - `Type.swift` - `SlangType` enum (int, float, string, bool, void, structType, enumType, unionType, function, error)
   - `TypeChecker.swift` - Scoped symbol table, type inference, exhaustiveness checking for switch
 
 - **Interpreter/** - Tree-walking execution
-  - `Value.swift` - Runtime values (int, float, string, bool, structInstance, enumCase)
+  - `Value.swift` - Runtime values (int, float, string, bool, structInstance, enumCase, unionInstance)
   - `Environment.swift` - Variable scopes with parent chain
   - `Interpreter.swift` - Statement/expression evaluation, finds and runs `main()`
 
@@ -92,6 +92,37 @@ Uses swift-argument-parser. Commands: `run`, `check`, `parse`, `tokenize`.
   ```
 - Cases use `return` to provide values (single-line or block body)
 - Type checker validates: exhaustiveness, consistent return types, return presence
+
+## Language Features (v0.1.2)
+
+- **Union types**: Create a type that can hold values from multiple existing types
+  ```slang
+  struct Dog { name: String }
+  struct Cat { name: String }
+  union Pet = Dog | Cat
+
+  var pet: Pet = Pet.Dog(Dog { name: "Buddy" })
+  ```
+- Unions can contain structs, enums, or primitives: `union Value = Int | String`
+- Values created with qualified constructors: `UnionType.VariantName(value)`
+- Pattern matching on unions in switch statements with exhaustiveness checking
+- **Pattern binding**: In switch cases, the lowercase variant name is automatically bound to the underlying value
+  ```slang
+  switch (pet) {
+      Pet.Dog -> print("Dog: \(dog.name)")  // 'dog' is bound to Dog value
+      Pet.Cat -> print("Cat: \(cat.name)")  // 'cat' is bound to Cat value
+  }
+  ```
+- Works with primitives too:
+  ```slang
+  union Value = Int | String
+  var v: Value = Value.Int(42)
+  switch (v) {
+      Value.Int -> print("number: \(int)")     // 'int' is bound
+      Value.String -> print("text: \(string)") // 'string' is bound
+  }
+  ```
+- Union switch expressions return values just like enum switch expressions
 
 ## Key Patterns
 

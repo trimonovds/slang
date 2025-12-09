@@ -155,4 +155,33 @@ struct LexerTests {
         let kinds = tokens.map { $0.kind }
         #expect(kinds == [.stringLiteral("hello\nworld\t!"), .eof])
     }
+
+    // MARK: - Union Tests (v0.1.2)
+
+    @Test("Union keyword and pipe operator")
+    func unionKeywordAndPipe() throws {
+        let source = "union Pet = Dog | Cat"
+        let lexer = Lexer(source: source)
+        let tokens = try lexer.tokenize()
+
+        let kinds = tokens.map { $0.kind }
+        #expect(kinds == [
+            .keyword(.union), .identifier("Pet"), .equal,
+            .identifier("Dog"), .pipe, .identifier("Cat"),
+            .eof
+        ])
+    }
+
+    @Test("Multiple pipe operators")
+    func multiplePipes() throws {
+        let source = "A | B | C"
+        let lexer = Lexer(source: source)
+        let tokens = try lexer.tokenize()
+
+        let kinds = tokens.map { $0.kind }
+        #expect(kinds == [
+            .identifier("A"), .pipe, .identifier("B"), .pipe, .identifier("C"),
+            .eof
+        ])
+    }
 }

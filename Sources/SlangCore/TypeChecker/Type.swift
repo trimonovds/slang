@@ -12,6 +12,7 @@ public indirect enum SlangType: Equatable, CustomStringConvertible, Sendable {
     // User-defined types
     case structType(name: String)
     case enumType(name: String)
+    case unionType(name: String)
 
     // Function type (for type checking calls)
     case function(params: [SlangType], returnType: SlangType)
@@ -28,6 +29,7 @@ public indirect enum SlangType: Equatable, CustomStringConvertible, Sendable {
         case .void: return "Void"
         case .structType(let name): return name
         case .enumType(let name): return name
+        case .unionType(let name): return name
         case .function(let params, let ret):
             let paramStr = params.map { $0.description }.joined(separator: ", ")
             return "(\(paramStr)) -> \(ret)"
@@ -73,5 +75,20 @@ public struct EnumTypeInfo: Sendable {
     public init(name: String, cases: Set<String>) {
         self.name = name
         self.cases = cases
+    }
+}
+
+/// Information about a union type
+public struct UnionTypeInfo: Sendable {
+    public let name: String
+    /// Maps variant name to the underlying type
+    public let variants: [String: SlangType]
+    /// The variant names in declaration order
+    public let variantOrder: [String]
+
+    public init(name: String, variants: [String: SlangType], variantOrder: [String]) {
+        self.name = name
+        self.variants = variants
+        self.variantOrder = variantOrder
     }
 }

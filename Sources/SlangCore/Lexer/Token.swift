@@ -14,6 +14,7 @@ public enum Keyword: String, CaseIterable, Sendable {
     case `return`
     case `true`
     case `false`
+    case `union`
 }
 
 /// The type of a token
@@ -46,6 +47,7 @@ public enum TokenKind: Equatable, Sendable {
 
     case ampersandAmpersand  // &&
     case pipePipe            // ||
+    case pipe                // |
 
     case plusEqual      // +=
     case minusEqual     // -=
@@ -112,6 +114,7 @@ extension TokenKind: CustomStringConvertible {
         case .greaterEqual: return ">="
         case .ampersandAmpersand: return "&&"
         case .pipePipe: return "||"
+        case .pipe: return "|"
         case .plusEqual: return "+="
         case .minusEqual: return "-="
         case .starEqual: return "*="

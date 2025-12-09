@@ -153,12 +153,12 @@ public class Lexer {
                 throw error("Unexpected character '&'. Did you mean '&&'?", at: startLocation)
             }
 
-        // ||
+        // | or ||
         case "|":
             if match("|") {
                 addToken(.pipePipe, start: startLocation)
             } else {
-                throw error("Unexpected character '|'. Did you mean '||'?", at: startLocation)
+                addToken(.pipe, start: startLocation)
             }
 
         // Whitespace

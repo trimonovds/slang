@@ -82,6 +82,16 @@ public struct EnumCase: Sendable {
     }
 }
 
+public struct UnionVariant: Sendable {
+    public let typeName: String
+    public let range: SourceRange
+
+    public init(typeName: String, range: SourceRange) {
+        self.typeName = typeName
+        self.range = range
+    }
+}
+
 public struct TypeAnnotation: Sendable {
     public let name: String
     public let range: SourceRange
@@ -221,6 +231,8 @@ public enum DeclarationKind: Sendable {
     case structDecl(name: String, fields: [StructField])
 
     case enumDecl(name: String, cases: [EnumCase])
+
+    case unionDecl(name: String, variants: [UnionVariant])
 }
 
 /// A declaration with source location
@@ -238,7 +250,8 @@ public struct Declaration: Sendable {
         switch kind {
         case .function(let name, _, _, _),
              .structDecl(let name, _),
-             .enumDecl(let name, _):
+             .enumDecl(let name, _),
+             .unionDecl(let name, _):
             return name
         }
     }

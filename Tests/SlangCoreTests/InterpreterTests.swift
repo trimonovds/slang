@@ -456,4 +456,254 @@ struct InterpreterTests {
         """
         try run(source, expectOutput: ["Caution"])
     }
+
+    // MARK: - Union Tests (v0.1.2)
+
+    @Test("Union construction with struct")
+    func unionConstructionStruct() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func main() {
+            var pet: Pet = Pet.Dog(Dog { name: "Buddy" })
+            switch (pet) {
+                Pet.Dog -> print("It's a dog!")
+                Pet.Cat -> print("It's a cat!")
+            }
+        }
+        """
+        try run(source, expectOutput: ["It's a dog!"])
+    }
+
+    @Test("Union with primitives")
+    func unionPrimitives() throws {
+        let source = """
+        union Value = Int | String
+
+        func main() {
+            var v: Value = Value.Int(42)
+            switch (v) {
+                Value.Int -> print("integer")
+                Value.String -> print("string")
+            }
+        }
+        """
+        try run(source, expectOutput: ["integer"])
+    }
+
+    @Test("Union multiple cases")
+    func unionMultipleCases() throws {
+        let source = """
+        struct Success { value: Int }
+        struct Error { message: String }
+        struct Pending { id: Int }
+        union Result = Success | Error | Pending
+
+        func main() {
+            var r: Result = Result.Error(Error { message: "oops" })
+            switch (r) {
+                Result.Success -> print("success")
+                Result.Error -> print("error")
+                Result.Pending -> print("pending")
+            }
+        }
+        """
+        try run(source, expectOutput: ["error"])
+    }
+
+    @Test("Union switch expression")
+    func unionSwitchExpression() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func describePet(pet: Pet) -> String {
+            return switch (pet) {
+                Pet.Dog -> return "dog"
+                Pet.Cat -> return "cat"
+            }
+        }
+
+        func main() {
+            var pet: Pet = Pet.Cat(Cat { name: "Whiskers" })
+            print(describePet(pet))
+        }
+        """
+        try run(source, expectOutput: ["cat"])
+    }
+
+    @Test("Union with String primitive")
+    func unionStringPrimitive() throws {
+        let source = """
+        union Value = Int | String
+
+        func main() {
+            var v: Value = Value.String("hello world")
+            switch (v) {
+                Value.Int -> print("number")
+                Value.String -> print("text")
+            }
+        }
+        """
+        try run(source, expectOutput: ["text"])
+    }
+
+    @Test("Union in function parameter")
+    func unionFunctionParameter() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func describe(pet: Pet) -> String {
+            var result: String = ""
+            switch (pet) {
+                Pet.Dog -> result = "woof"
+                Pet.Cat -> result = "meow"
+            }
+            return result
+        }
+
+        func main() {
+            var d: Dog = Dog { name: "Rex" }
+            var pet: Pet = Pet.Dog(d)
+            print(describe(pet))
+        }
+        """
+        try run(source, expectOutput: ["woof"])
+    }
+
+    // MARK: - Union Pattern Binding Tests (v0.1.2)
+
+    @Test("Union pattern binding - access struct field")
+    func unionPatternBindingStructField() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func main() {
+            var pet: Pet = Pet.Dog(Dog { name: "Buddy" })
+            switch (pet) {
+                Pet.Dog -> print(dog.name)
+                Pet.Cat -> print(cat.name)
+            }
+        }
+        """
+        try run(source, expectOutput: ["Buddy"])
+    }
+
+    @Test("Union pattern binding - access cat variant")
+    func unionPatternBindingCatVariant() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func main() {
+            var pet: Pet = Pet.Cat(Cat { name: "Whiskers" })
+            switch (pet) {
+                Pet.Dog -> print(dog.name)
+                Pet.Cat -> print(cat.name)
+            }
+        }
+        """
+        try run(source, expectOutput: ["Whiskers"])
+    }
+
+    @Test("Union pattern binding - primitive Int")
+    func unionPatternBindingPrimitiveInt() throws {
+        let source = """
+        union Value = Int | String
+
+        func main() {
+            var v: Value = Value.Int(42)
+            switch (v) {
+                Value.Int -> print("number: \\(int)")
+                Value.String -> print("text: \\(string)")
+            }
+        }
+        """
+        try run(source, expectOutput: ["number: 42"])
+    }
+
+    @Test("Union pattern binding - primitive String")
+    func unionPatternBindingPrimitiveString() throws {
+        let source = """
+        union Value = Int | String
+
+        func main() {
+            var v: Value = Value.String("hello")
+            switch (v) {
+                Value.Int -> print("number: \\(int)")
+                Value.String -> print("text: \\(string)")
+            }
+        }
+        """
+        try run(source, expectOutput: ["text: hello"])
+    }
+
+    @Test("Union pattern binding - switch expression")
+    func unionPatternBindingSwitchExpr() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func main() {
+            var pet: Pet = Pet.Dog(Dog { name: "Rex" })
+            var name: String = switch (pet) {
+                Pet.Dog -> return dog.name
+                Pet.Cat -> return cat.name
+            }
+            print(name)
+        }
+        """
+        try run(source, expectOutput: ["Rex"])
+    }
+
+    @Test("Union pattern binding - complex struct")
+    func unionPatternBindingComplexStruct() throws {
+        let source = """
+        struct Loading { progress: Int }
+        struct Success { value: Int }
+        struct Error { message: String }
+        union State = Loading | Success | Error
+
+        func main() {
+            var state: State = State.Loading(Loading { progress: 50 })
+            switch (state) {
+                State.Loading -> print("Loading: \\(loading.progress)%")
+                State.Success -> print("Success: \\(success.value)")
+                State.Error -> print("Error: \\(error.message)")
+            }
+        }
+        """
+        try run(source, expectOutput: ["Loading: 50%"])
+    }
+
+    @Test("Union pattern binding - in function")
+    func unionPatternBindingInFunction() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func getPetName(pet: Pet) -> String {
+            return switch (pet) {
+                Pet.Dog -> return dog.name
+                Pet.Cat -> return cat.name
+            }
+        }
+
+        func main() {
+            var pet: Pet = Pet.Cat(Cat { name: "Felix" })
+            print(getPetName(pet))
+        }
+        """
+        try run(source, expectOutput: ["Felix"])
+    }
 }

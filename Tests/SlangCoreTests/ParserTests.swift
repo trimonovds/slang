@@ -611,4 +611,88 @@ struct ParserTests {
             return
         }
     }
+
+    // MARK: - Union Declaration Tests (v0.1.2)
+
+    @Test("Union declaration with two variants")
+    func unionDeclarationTwoVariants() throws {
+        let source = """
+        union Pet = Dog | Cat
+        """
+        let decls = try parse(source)
+
+        #expect(decls.count == 1)
+        guard case .unionDecl(let name, let variants) = decls[0].kind else {
+            Issue.record("Expected union declaration")
+            return
+        }
+        #expect(name == "Pet")
+        #expect(variants.count == 2)
+        #expect(variants[0].typeName == "Dog")
+        #expect(variants[1].typeName == "Cat")
+    }
+
+    @Test("Union declaration with primitives")
+    func unionDeclarationPrimitives() throws {
+        let source = """
+        union Value = Int | String
+        """
+        let decls = try parse(source)
+
+        guard case .unionDecl(let name, let variants) = decls[0].kind else {
+            Issue.record("Expected union declaration")
+            return
+        }
+        #expect(name == "Value")
+        #expect(variants.count == 2)
+        #expect(variants[0].typeName == "Int")
+        #expect(variants[1].typeName == "String")
+    }
+
+    @Test("Union declaration with multiple variants")
+    func unionDeclarationMultipleVariants() throws {
+        let source = """
+        union Result = Success | Error | Pending
+        """
+        let decls = try parse(source)
+
+        guard case .unionDecl(let name, let variants) = decls[0].kind else {
+            Issue.record("Expected union declaration")
+            return
+        }
+        #expect(name == "Result")
+        #expect(variants.count == 3)
+        #expect(variants[0].typeName == "Success")
+        #expect(variants[1].typeName == "Error")
+        #expect(variants[2].typeName == "Pending")
+    }
+
+    @Test("Program with union and structs")
+    func programWithUnionAndStructs() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func main() {
+            var pet: Pet = Pet.Dog(Dog { name: "Buddy" })
+        }
+        """
+        let decls = try parse(source)
+
+        #expect(decls.count == 4)
+        guard case .structDecl("Dog", _) = decls[0].kind else {
+            Issue.record("Expected struct Dog")
+            return
+        }
+        guard case .structDecl("Cat", _) = decls[1].kind else {
+            Issue.record("Expected struct Cat")
+            return
+        }
+        guard case .unionDecl("Pet", let variants) = decls[2].kind else {
+            Issue.record("Expected union Pet")
+            return
+        }
+        #expect(variants.count == 2)
+    }
 }

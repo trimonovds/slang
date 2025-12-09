@@ -125,7 +125,7 @@ public struct Parser {
             if previous().kind == .newline { return }
 
             switch peek().kind {
-            case .keyword(.func), .keyword(.struct), .keyword(.enum),
+            case .keyword(.func), .keyword(.struct), .keyword(.enum), .keyword(.union),
                  .keyword(.var), .keyword(.if), .keyword(.for),
                  .keyword(.switch), .keyword(.return):
                 return
@@ -149,8 +149,10 @@ extension Parser {
             return try parseStructDecl()
         case .keyword(.enum):
             return try parseEnumDecl()
+        case .keyword(.union):
+            return try parseUnionDecl()
         default:
-            throw error("Expected declaration (func, struct, or enum)", at: token)
+            throw error("Expected declaration (func, struct, enum, or union)", at: token)
         }
     }
 
@@ -307,6 +309,47 @@ extension Parser {
         return Declaration(
             kind: .enumDecl(name: name, cases: cases),
             range: startToken.range.extended(to: endToken.range)
+        )
+    }
+
+    private mutating func parseUnionDecl() throws -> Declaration {
+        let startToken = try consume(.keyword(.union), message: "Expected 'union'")
+        skipNewlines()
+
+        guard case .identifier(let name) = peek().kind else {
+            throw error("Expected union name", at: peek())
+        }
+        advance()
+
+        skipNewlines()
+        try consume(.equal, message: "Expected '=' after union name")
+        skipNewlines()
+
+        var variants: [UnionVariant] = []
+
+        // Parse first variant
+        guard case .identifier(let firstTypeName) = peek().kind else {
+            throw error("Expected type name in union definition", at: peek())
+        }
+        let firstToken = advance()
+        variants.append(UnionVariant(typeName: firstTypeName, range: firstToken.range))
+
+        skipNewlines()
+
+        // Parse remaining variants separated by |
+        while match(.pipe) {
+            skipNewlines()
+            guard case .identifier(let typeName) = peek().kind else {
+                throw error("Expected type name after '|'", at: peek())
+            }
+            let variantToken = advance()
+            variants.append(UnionVariant(typeName: typeName, range: variantToken.range))
+            skipNewlines()
+        }
+
+        return Declaration(
+            kind: .unionDecl(name: name, variants: variants),
+            range: startToken.range.extended(to: variants.last!.range)
         )
     }
 }

@@ -9,6 +9,7 @@ public indirect enum Value: Equatable, CustomStringConvertible, Sendable {
     case void
     case structInstance(typeName: String, fields: [String: Value])
     case enumCase(typeName: String, caseName: String)
+    case unionInstance(unionType: String, variantName: String, value: Value)
 
     public var description: String {
         switch self {
@@ -22,6 +23,8 @@ public indirect enum Value: Equatable, CustomStringConvertible, Sendable {
             return "\(name) { \(fieldStrs) }"
         case .enumCase(let typeName, let caseName):
             return "\(typeName).\(caseName)"
+        case .unionInstance(let unionType, let variantName, let value):
+            return "\(unionType).\(variantName)(\(value))"
         }
     }
 

@@ -204,6 +204,10 @@ struct Parse: ParsableCommand {
             for enumCase in cases {
                 print("\(pad)  case \(enumCase.name)")
             }
+
+        case .unionDecl(let name, let variants):
+            let variantStr = variants.map { $0.typeName }.joined(separator: " | ")
+            print("\(pad)union \(name) = \(variantStr)")
         }
     }
 

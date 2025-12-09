@@ -116,4 +116,15 @@ struct ExampleTests {
             "Value of up: 0"
         ])
     }
+
+    @Test("unions.slang - v0.1.2 union types")
+    func unionsExample() throws {
+        let output = try runExample("unions.slang")
+        #expect(output == [
+            "Pet is: dog",
+            "It's a dog named Buddy!",
+            "integer: 42",
+            "Pet 2 name: Whiskers"
+        ])
+    }
 }
