@@ -8,9 +8,72 @@ struct Slang: ParsableCommand {
         commandName: "slang",
         abstract: "The Slang programming language",
         version: "0.1.0",
-        subcommands: [Run.self, Tokenize.self, Parse.self, Check.self],
+        subcommands: [Run.self, Check.self, Parse.self, Tokenize.self],
         defaultSubcommand: Run.self
     )
+}
+
+// MARK: - Utility Functions
+
+func readFile(_ path: String) throws -> String {
+    guard FileManager.default.fileExists(atPath: path) else {
+        printError("File not found: \(path)")
+        throw ExitCode.failure
+    }
+
+    guard path.hasSuffix(".slang") else {
+        printError("File must have .slang extension: \(path)")
+        throw ExitCode.failure
+    }
+
+    return try String(contentsOfFile: path, encoding: .utf8)
+}
+
+func printDiagnostics(_ diagnostics: [Diagnostic], source: String) {
+    let printer = DiagnosticPrinter(source: source)
+    for diagnostic in diagnostics {
+        printer.print(diagnostic)
+    }
+}
+
+func printRuntimeError(_ error: RuntimeError, source: String) {
+    let red = "\u{001B}[31m"
+    let reset = "\u{001B}[0m"
+    let bold = "\u{001B}[1m"
+
+    print("\(red)\(bold)runtime error:\(reset)\(bold) \(error.message)\(reset)")
+    if let range = error.range {
+        print("  \(red)-->\(reset) \(range.file):\(range.start.line):\(range.start.column)")
+        printSourceLine(source: source, line: range.start.line, column: range.start.column)
+    }
+}
+
+func printSourceLine(source: String, line: Int, column: Int) {
+    let red = "\u{001B}[31m"
+    let reset = "\u{001B}[0m"
+    let lines = source.components(separatedBy: "\n")
+    guard line > 0 && line <= lines.count else { return }
+
+    let sourceLine = lines[line - 1]
+    let lineNum = String(line)
+    let padding = String(repeating: " ", count: lineNum.count)
+
+    print("   \(padding)\(red)|\(reset)")
+    print(" \(red)\(lineNum)\(reset) \(red)|\(reset) \(sourceLine)")
+    print("   \(padding)\(red)|\(reset) " + String(repeating: " ", count: column - 1) + "\(red)^\(reset)")
+}
+
+func printError(_ message: String) {
+    let red = "\u{001B}[31m"
+    let reset = "\u{001B}[0m"
+    let bold = "\u{001B}[1m"
+    print("\(red)\(bold)error:\(reset)\(bold) \(message)\(reset)")
+}
+
+func printSuccess(_ message: String) {
+    let green = "\u{001B}[32m"
+    let reset = "\u{001B}[0m"
+    print("\(green)✓\(reset) \(message)")
 }
 
 // MARK: - Run Command
@@ -20,11 +83,11 @@ struct Run: ParsableCommand {
         abstract: "Run a Slang program"
     )
 
-    @Argument(help: "The source file to run")
+    @Argument(help: "The .slang file to run")
     var file: String
 
     mutating func run() throws {
-        let source = try String(contentsOfFile: file, encoding: .utf8)
+        let source = try readFile(file)
         let lexer = Lexer(source: source, filename: file)
 
         do {
@@ -38,51 +101,52 @@ struct Run: ParsableCommand {
             let interpreter = Interpreter()
             try interpreter.interpret(declarations)
         } catch let error as LexerError {
-            for diagnostic in error.diagnostics {
-                print(diagnostic)
-            }
+            printDiagnostics(error.diagnostics, source: source)
             throw ExitCode.failure
         } catch let error as ParserError {
-            for diagnostic in error.diagnostics {
-                print(diagnostic)
-            }
+            printDiagnostics(error.diagnostics, source: source)
             throw ExitCode.failure
         } catch let error as TypeCheckError {
-            for diagnostic in error.diagnostics {
-                print(diagnostic)
-            }
+            printDiagnostics(error.diagnostics, source: source)
             throw ExitCode.failure
         } catch let error as RuntimeError {
-            print(error)
+            printRuntimeError(error, source: source)
             throw ExitCode.failure
         }
     }
 }
 
-// MARK: - Tokenize Command
+// MARK: - Check Command
 
-struct Tokenize: ParsableCommand {
+struct Check: ParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Tokenize a Slang program and print tokens"
+        abstract: "Type-check a Slang program without running it"
     )
 
-    @Argument(help: "The source file to tokenize")
+    @Argument(help: "The .slang file to check")
     var file: String
 
     mutating func run() throws {
-        let source = try String(contentsOfFile: file, encoding: .utf8)
+        let source = try readFile(file)
         let lexer = Lexer(source: source, filename: file)
 
         do {
             let tokens = try lexer.tokenize()
-            for token in tokens {
-                print("\(token.range.start): \(token.kind)")
-            }
-            print("\nTotal: \(tokens.count) tokens")
+            var parser = Parser(tokens: tokens)
+            let declarations = try parser.parse()
+
+            let typeChecker = TypeChecker()
+            try typeChecker.check(declarations)
+
+            printSuccess("No errors found in \(file)")
         } catch let error as LexerError {
-            for diagnostic in error.diagnostics {
-                print(diagnostic)
-            }
+            printDiagnostics(error.diagnostics, source: source)
+            throw ExitCode.failure
+        } catch let error as ParserError {
+            printDiagnostics(error.diagnostics, source: source)
+            throw ExitCode.failure
+        } catch let error as TypeCheckError {
+            printDiagnostics(error.diagnostics, source: source)
             throw ExitCode.failure
         }
     }
@@ -92,14 +156,14 @@ struct Tokenize: ParsableCommand {
 
 struct Parse: ParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Parse a Slang program and print the AST"
+        abstract: "Parse a Slang program and print the AST (for debugging)"
     )
 
-    @Argument(help: "The source file to parse")
+    @Argument(help: "The .slang file to parse")
     var file: String
 
     mutating func run() throws {
-        let source = try String(contentsOfFile: file, encoding: .utf8)
+        let source = try readFile(file)
         let lexer = Lexer(source: source, filename: file)
 
         do {
@@ -112,14 +176,10 @@ struct Parse: ParsableCommand {
             }
             print("\nTotal: \(declarations.count) declarations")
         } catch let error as LexerError {
-            for diagnostic in error.diagnostics {
-                print(diagnostic)
-            }
+            printDiagnostics(error.diagnostics, source: source)
             throw ExitCode.failure
         } catch let error as ParserError {
-            for diagnostic in error.diagnostics {
-                print(diagnostic)
-            }
+            printDiagnostics(error.diagnostics, source: source)
             throw ExitCode.failure
         }
     }
@@ -239,43 +299,28 @@ struct Parse: ParsableCommand {
     }
 }
 
-// MARK: - Check Command
+// MARK: - Tokenize Command
 
-struct Check: ParsableCommand {
+struct Tokenize: ParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Type-check a Slang program"
+        abstract: "Tokenize a Slang program and print tokens (for debugging)"
     )
 
-    @Argument(help: "The source file to type-check")
+    @Argument(help: "The .slang file to tokenize")
     var file: String
 
     mutating func run() throws {
-        let source = try String(contentsOfFile: file, encoding: .utf8)
+        let source = try readFile(file)
         let lexer = Lexer(source: source, filename: file)
 
         do {
             let tokens = try lexer.tokenize()
-            var parser = Parser(tokens: tokens)
-            let declarations = try parser.parse()
-
-            let typeChecker = TypeChecker()
-            try typeChecker.check(declarations)
-
-            print("Type check passed for \(file)")
+            for token in tokens {
+                print("\(token.range.start.line):\(token.range.start.column)\t\(token.kind)\t'\(token.lexeme)'")
+            }
+            print("\nTotal: \(tokens.count) tokens")
         } catch let error as LexerError {
-            for diagnostic in error.diagnostics {
-                print(diagnostic)
-            }
-            throw ExitCode.failure
-        } catch let error as ParserError {
-            for diagnostic in error.diagnostics {
-                print(diagnostic)
-            }
-            throw ExitCode.failure
-        } catch let error as TypeCheckError {
-            for diagnostic in error.diagnostics {
-                print(diagnostic)
-            }
+            printDiagnostics(error.diagnostics, source: source)
             throw ExitCode.failure
         }
     }
