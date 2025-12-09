@@ -33,9 +33,21 @@ public final class Interpreter: @unchecked Sendable {
     private var structs: [String: Declaration] = [:]
     private var enums: [String: Declaration] = [:]
 
+    /// Handler for print() output. Defaults to printing to stdout.
+    private let printHandler: (String) -> Void
+
+    /// Create an interpreter with default stdout printing
     public init() {
         self.globalEnv = RuntimeEnvironment()
         self.environment = globalEnv
+        self.printHandler = { Swift.print($0) }
+    }
+
+    /// Create an interpreter with custom print handler (useful for testing)
+    public init(printHandler: @escaping (String) -> Void) {
+        self.globalEnv = RuntimeEnvironment()
+        self.environment = globalEnv
+        self.printHandler = printHandler
     }
 
     // MARK: - Public API
@@ -519,7 +531,7 @@ extension Interpreter {
             throw RuntimeError("print() expects String argument, got \(value)")
         }
 
-        print(str)
+        printHandler(str)
         return .void
     }
 
