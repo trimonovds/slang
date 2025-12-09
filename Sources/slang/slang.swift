@@ -8,7 +8,7 @@ struct Slang: ParsableCommand {
         commandName: "slang",
         abstract: "The Slang programming language",
         version: "0.1.0",
-        subcommands: [Run.self, Tokenize.self, Parse.self],
+        subcommands: [Run.self, Tokenize.self, Parse.self, Check.self],
         defaultSubcommand: Run.self
     )
 }
@@ -207,6 +207,48 @@ struct Parse: ParsableCommand {
         case .structInit(let typeName, let fields):
             let fieldsStr = fields.map { "\($0.name): \(exprString($0.value))" }.joined(separator: ", ")
             return "\(typeName) { \(fieldsStr) }"
+        }
+    }
+}
+
+// MARK: - Check Command
+
+struct Check: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Type-check a Slang program"
+    )
+
+    @Argument(help: "The source file to type-check")
+    var file: String
+
+    mutating func run() throws {
+        let source = try String(contentsOfFile: file, encoding: .utf8)
+        let lexer = Lexer(source: source, filename: file)
+
+        do {
+            let tokens = try lexer.tokenize()
+            var parser = Parser(tokens: tokens)
+            let declarations = try parser.parse()
+
+            let typeChecker = TypeChecker()
+            try typeChecker.check(declarations)
+
+            print("Type check passed for \(file)")
+        } catch let error as LexerError {
+            for diagnostic in error.diagnostics {
+                print(diagnostic)
+            }
+            throw ExitCode.failure
+        } catch let error as ParserError {
+            for diagnostic in error.diagnostics {
+                print(diagnostic)
+            }
+            throw ExitCode.failure
+        } catch let error as TypeCheckError {
+            for diagnostic in error.diagnostics {
+                print(diagnostic)
+            }
+            throw ExitCode.failure
         }
     }
 }
