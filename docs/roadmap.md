@@ -410,3 +410,15 @@ print("Hello")           // OK
 print("\(someInt)")      // OK - interpolate to String
 // print(42)             // Error - must be String
 ```
+
+## v0.1.1
+### Syntax Notes
+```slang
+var dir: Direction = Direction.up
+var oppositeDirection: Direction = switch (dir) {
+        Direction.up -> return Direction.down
+        Direction.down -> { return Direction.up }
+        Direction.left -> return Direction.right
+        Direction.right -> { return Direction.left }
+    }
+```

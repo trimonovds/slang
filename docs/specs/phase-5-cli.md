@@ -641,20 +641,20 @@ runtime error: Division by zero
 
 ## Acceptance Criteria
 
-- [ ] CLI has proper subcommands: `run`, `check`, `parse`, `tokenize`
-- [ ] `slang run <file>` executes programs
-- [ ] `slang check <file>` type-checks without running
-- [ ] `slang parse <file>` prints AST for debugging
-- [ ] `slang tokenize <file>` prints tokens for debugging
-- [ ] `slang --version` shows version
-- [ ] `slang --help` shows help
-- [ ] Errors display with:
-  - [ ] Colored severity (red for errors)
-  - [ ] File location (file:line:column)
-  - [ ] Source context with underline
-- [ ] Non-zero exit code on errors
-- [ ] File validation (.slang extension, file exists)
-- [ ] All commands work end-to-end
+- [x] CLI has proper subcommands: `run`, `check`, `parse`, `tokenize`
+- [x] `slang run <file>` executes programs
+- [x] `slang check <file>` type-checks without running
+- [x] `slang parse <file>` prints AST for debugging
+- [x] `slang tokenize <file>` prints tokens for debugging
+- [x] `slang --version` shows version
+- [x] `slang --help` shows help
+- [x] Errors display with:
+  - [x] Colored severity (red for errors)
+  - [x] File location (file:line:column)
+  - [x] Source context with underline
+- [x] Non-zero exit code on errors
+- [x] File validation (.slang extension, file exists)
+- [x] All commands work end-to-end
 
 ---
 

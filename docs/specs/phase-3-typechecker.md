@@ -960,27 +960,27 @@ func main() {
 
 ## Acceptance Criteria
 
-- [ ] Type.swift created with all type representations
-- [ ] TypeChecker.swift created and handles:
-  - [ ] Built-in types (Int, Float, String, Bool, Void)
-  - [ ] User-defined struct types
-  - [ ] User-defined enum types
-  - [ ] Function types
-  - [ ] Variable declarations with type checking
-  - [ ] Return type checking
-  - [ ] If condition must be Bool
-  - [ ] For condition must be Bool
-  - [ ] Switch exhaustiveness for enums
-  - [ ] Operator type checking
-  - [ ] Function call argument type checking
-  - [ ] Struct field access type checking
-  - [ ] Struct initialization type checking
-- [ ] Uses `expr.kind` and `stmt.kind` pattern matching
-- [ ] Accesses `expr.range` directly for error reporting
-- [ ] Error type prevents cascading errors
-- [ ] Good error messages with source locations
-- [ ] All test cases pass
-- [ ] `swift build` succeeds
+- [x] Type.swift created with all type representations
+- [x] TypeChecker.swift created and handles:
+  - [x] Built-in types (Int, Float, String, Bool, Void)
+  - [x] User-defined struct types
+  - [x] User-defined enum types
+  - [x] Function types
+  - [x] Variable declarations with type checking
+  - [x] Return type checking
+  - [x] If condition must be Bool
+  - [x] For condition must be Bool
+  - [x] Switch exhaustiveness for enums
+  - [x] Operator type checking
+  - [x] Function call argument type checking
+  - [x] Struct field access type checking
+  - [x] Struct initialization type checking
+- [x] Uses `expr.kind` and `stmt.kind` pattern matching
+- [x] Accesses `expr.range` directly for error reporting
+- [x] Error type prevents cascading errors
+- [x] Good error messages with source locations
+- [x] All test cases pass
+- [x] `swift build` succeeds
 
 ---
 

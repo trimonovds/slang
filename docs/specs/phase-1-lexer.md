@@ -806,23 +806,23 @@ rightBrace, eof
 
 ## Acceptance Criteria
 
-- [ ] Package.swift updated with SlangCore target
-- [ ] SourceLocation.swift created with line/column/offset tracking
-- [ ] Token.swift created with all token kinds
-- [ ] Diagnostic.swift created for error reporting
-- [ ] Lexer.swift created and handles:
-  - [ ] All operators
-  - [ ] All keywords
-  - [ ] Identifiers
-  - [ ] Integer literals
-  - [ ] Float literals
-  - [ ] String literals
-  - [ ] String interpolation `\(expr)`
-  - [ ] Single-line comments `//`
-  - [ ] Newlines (for optional semicolons)
-- [ ] All test cases pass
-- [ ] `swift build` succeeds
-- [ ] `swift test` runs (even if no tests yet)
+- [x] Package.swift updated with SlangCore target
+- [x] SourceLocation.swift created with line/column/offset tracking
+- [x] Token.swift created with all token kinds
+- [x] Diagnostic.swift created for error reporting
+- [x] Lexer.swift created and handles:
+  - [x] All operators
+  - [x] All keywords
+  - [x] Identifiers
+  - [x] Integer literals
+  - [x] Float literals
+  - [x] String literals
+  - [x] String interpolation `\(expr)`
+  - [x] Single-line comments `//`
+  - [x] Newlines (for optional semicolons)
+- [x] All test cases pass
+- [x] `swift build` succeeds
+- [x] `swift test` runs (even if no tests yet)
 
 ---
 

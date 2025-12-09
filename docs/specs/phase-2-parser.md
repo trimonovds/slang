@@ -1350,14 +1350,14 @@ Declaration(
 
 ## Acceptance Criteria
 
-- [ ] AST uses Kind + wrapper struct pattern for Expression, Statement, Declaration
-- [ ] Common `range` property accessible without pattern matching
-- [ ] ExpressionKind, StatementKind, DeclarationKind enums are exhaustive
-- [ ] BuiltinTypeName enum replaces magic strings
-- [ ] No `as` or `as?` casting anywhere
-- [ ] Parser creates wrapper structs with kind and range
-- [ ] All test cases pass
-- [ ] `swift build` succeeds
+- [x] AST uses Kind + wrapper struct pattern for Expression, Statement, Declaration
+- [x] Common `range` property accessible without pattern matching
+- [x] ExpressionKind, StatementKind, DeclarationKind enums are exhaustive
+- [x] BuiltinTypeName enum replaces magic strings
+- [x] No `as` or `as?` casting anywhere
+- [x] Parser creates wrapper structs with kind and range
+- [x] All test cases pass
+- [x] `swift build` succeeds
 
 ---
 

@@ -970,25 +970,25 @@ swift test -v
 ## Acceptance Criteria
 
 ### Tests
-- [ ] LexerTests pass (10+ test cases)
-- [ ] ParserTests pass (15+ test cases)
-- [ ] TypeCheckerTests pass (12+ test cases)
-- [ ] InterpreterTests pass (8+ test cases)
-- [ ] IntegrationTests pass (2+ test cases)
-- [ ] All tests run via `swift test`
+- [x] LexerTests pass (10+ test cases)
+- [x] ParserTests pass (15+ test cases)
+- [x] TypeCheckerTests pass (12+ test cases)
+- [x] InterpreterTests pass (8+ test cases)
+- [x] IntegrationTests pass (2+ test cases)
+- [x] All tests run via `swift test`
 
 ### Examples
-- [ ] examples/hello.slang runs successfully
-- [ ] examples/fibonacci.slang runs successfully
-- [ ] examples/structs.slang runs successfully
-- [ ] examples/enums.slang runs successfully
-- [ ] examples/loops.slang runs successfully
+- [x] examples/hello.slang runs successfully
+- [x] examples/fibonacci.slang runs successfully
+- [x] examples/structs.slang runs successfully
+- [x] examples/enums.slang runs successfully
+- [x] examples/loops.slang runs successfully
 
 ### v0.1 Complete
-- [ ] Full v0.1 test program runs with expected output
-- [ ] All 6 phases documented and tested
-- [ ] `slang run`, `slang check`, `slang parse`, `slang tokenize` all work
-- [ ] Error messages are helpful and include source location
+- [x] Full v0.1 test program runs with expected output
+- [x] All 6 phases documented and tested
+- [x] `slang run`, `slang check`, `slang parse`, `slang tokenize` all work
+- [x] Error messages are helpful and include source location
 
 ---
 

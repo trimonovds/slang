@@ -6,12 +6,12 @@ This is the master document for implementing the Slang programming language. Eac
 
 | Phase | Status | Spec |
 |-------|--------|------|
-| 1. Lexer | Not Started | [phase-1-lexer.md](phase-1-lexer.md) |
-| 2. Parser & AST | Not Started | [phase-2-parser.md](phase-2-parser.md) |
-| 3. Type Checker | Not Started | [phase-3-typechecker.md](phase-3-typechecker.md) |
-| 4. Interpreter | Not Started | [phase-4-interpreter.md](phase-4-interpreter.md) |
-| 5. CLI Polish | Not Started | [phase-5-cli.md](phase-5-cli.md) |
-| 6. Testing | Not Started | [phase-6-testing.md](phase-6-testing.md) |
+| 1. Lexer | ✅ Complete | [phase-1-lexer.md](phase-1-lexer.md) |
+| 2. Parser & AST | ✅ Complete | [phase-2-parser.md](phase-2-parser.md) |
+| 3. Type Checker | ✅ Complete | [phase-3-typechecker.md](phase-3-typechecker.md) |
+| 4. Interpreter | ✅ Complete | [phase-4-interpreter.md](phase-4-interpreter.md) |
+| 5. CLI Polish | ✅ Complete | [phase-5-cli.md](phase-5-cli.md) |
+| 6. Testing | ✅ Complete | [phase-6-testing.md](phase-6-testing.md) |
 
 ---
 

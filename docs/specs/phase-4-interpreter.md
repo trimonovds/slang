@@ -884,28 +884,28 @@ First quadrant
 
 ## Acceptance Criteria
 
-- [ ] Value.swift created with all value types
-- [ ] Environment.swift created with scoping
-- [ ] Interpreter.swift created and handles:
-  - [ ] Function declarations and calls
-  - [ ] Variable declarations and access
-  - [ ] Struct initialization and field access
-  - [ ] Enum case creation and comparison
-  - [ ] All arithmetic operators
-  - [ ] All comparison operators
-  - [ ] All logical operators
-  - [ ] Assignment and compound assignment
-  - [ ] String interpolation
-  - [ ] If/else statements
-  - [ ] For loops
-  - [ ] Switch statements
-  - [ ] Return statements
-  - [ ] Built-in print() function
-- [ ] Uses `expr.kind` and `stmt.kind` pattern matching
-- [ ] Accesses `expr.range` directly for error reporting
-- [ ] Proper scoping (local variables don't leak)
-- [ ] All test cases pass
-- [ ] `swift build` succeeds
+- [x] Value.swift created with all value types
+- [x] Environment.swift created with scoping
+- [x] Interpreter.swift created and handles:
+  - [x] Function declarations and calls
+  - [x] Variable declarations and access
+  - [x] Struct initialization and field access
+  - [x] Enum case creation and comparison
+  - [x] All arithmetic operators
+  - [x] All comparison operators
+  - [x] All logical operators
+  - [x] Assignment and compound assignment
+  - [x] String interpolation
+  - [x] If/else statements
+  - [x] For loops
+  - [x] Switch statements
+  - [x] Return statements
+  - [x] Built-in print() function
+- [x] Uses `expr.kind` and `stmt.kind` pattern matching
+- [x] Accesses `expr.range` directly for error reporting
+- [x] Proper scoping (local variables don't leak)
+- [x] All test cases pass
+- [x] `swift build` succeeds
 
 ---
 
