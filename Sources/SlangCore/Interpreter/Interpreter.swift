@@ -217,13 +217,18 @@ extension Interpreter {
     private func executeSwitch(subject: Expression, cases: [SwitchCase], range: SourceRange) throws {
         let subjectValue = try evaluate(subject)
 
+        // Extract subject variable name for type narrowing (if subject is a simple identifier)
+        var subjectVarName: String? = nil
+        if case .identifier(let name) = subject.kind {
+            subjectVarName = name
+        }
+
         for switchCase in cases {
             let patternValue = try evaluate(switchCase.pattern)
 
             // Match based on type of subject
             var matches = false
             var boundValue: Value? = nil
-            var boundName: String? = nil
 
             switch (subjectValue, patternValue) {
             case (.enumCase(let t1, let c1), .enumCase(let t2, let c2)):
@@ -233,7 +238,6 @@ extension Interpreter {
                 matches = t1 == t2 && v1 == v2
                 if matches {
                     boundValue = wrappedValue
-                    boundName = v1.lowercasedFirst
                 }
             default:
                 matches = subjectValue == patternValue
@@ -245,8 +249,8 @@ extension Interpreter {
                 let savedEnv = environment
                 environment = caseEnv
 
-                // Bind the extracted union value if applicable
-                if let name = boundName, let value = boundValue {
+                // Shadow the subject variable with the narrowed (unwrapped) value
+                if let name = subjectVarName, let value = boundValue {
                     environment.define(name, value: value)
                 }
 
@@ -656,13 +660,18 @@ extension Interpreter {
     private func evaluateSwitchExpr(subject: Expression, cases: [SwitchCase], range: SourceRange) throws -> Value {
         let subjectValue = try evaluate(subject)
 
+        // Extract subject variable name for type narrowing (if subject is a simple identifier)
+        var subjectVarName: String? = nil
+        if case .identifier(let name) = subject.kind {
+            subjectVarName = name
+        }
+
         for switchCase in cases {
             let patternValue = try evaluate(switchCase.pattern)
 
             // Match based on type of subject
             var matches = false
             var boundValue: Value? = nil
-            var boundName: String? = nil
 
             switch (subjectValue, patternValue) {
             case (.enumCase(let t1, let c1), .enumCase(let t2, let c2)):
@@ -672,7 +681,6 @@ extension Interpreter {
                 matches = t1 == t2 && v1 == v2
                 if matches {
                     boundValue = wrappedValue
-                    boundName = v1.lowercasedFirst
                 }
             default:
                 matches = subjectValue == patternValue
@@ -684,8 +692,8 @@ extension Interpreter {
                 let savedEnv = environment
                 environment = caseEnv
 
-                // Bind the extracted union value if applicable
-                if let name = boundName, let value = boundValue {
+                // Shadow the subject variable with the narrowed (unwrapped) value
+                if let name = subjectVarName, let value = boundValue {
                     environment.define(name, value: value)
                 }
 

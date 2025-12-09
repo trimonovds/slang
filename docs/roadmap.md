@@ -532,29 +532,29 @@ var sound: String = switch (pet) {
 }
 ```
 
-### Pattern Binding
+### Type Narrowing
 
-In switch cases for unions, the lowercase variant name is automatically bound to the underlying value:
+In switch cases for unions, the subject variable is automatically narrowed to the underlying type:
 
 ```slang
 switch (pet) {
-    Pet.Dog -> print("Dog: \(dog.name)")  // 'dog' is bound to the Dog value
-    Pet.Cat -> print("Cat: \(cat.name)")  // 'cat' is bound to the Cat value
+    Pet.Dog -> print("Dog: \(pet.name)")  // 'pet' is narrowed to Dog
+    Pet.Cat -> print("Cat: \(pet.name)")  // 'pet' is narrowed to Cat
 }
 
 // Works with primitives too
 union Value = Int | String
 var v: Value = Value.Int(42)
 switch (v) {
-    Value.Int -> print("number: \(int)")     // 'int' is bound
-    Value.String -> print("text: \(string)") // 'string' is bound
+    Value.Int -> print("number: \(v)")     // 'v' is narrowed to Int
+    Value.String -> print("text: \(v)")    // 'v' is narrowed to String
 }
 
 // Also works in switch expressions
 func getPetName(pet: Pet) -> String {
     return switch (pet) {
-        Pet.Dog -> return dog.name
-        Pet.Cat -> return cat.name
+        Pet.Dog -> return pet.name
+        Pet.Cat -> return pet.name
     }
 }
 ```
@@ -577,8 +577,8 @@ func describePet(pet: Pet) -> String {
 
 func getPetName(pet: Pet) -> String {
     return switch (pet) {
-        Pet.Dog -> return dog.name
-        Pet.Cat -> return cat.name
+        Pet.Dog -> return pet.name
+        Pet.Cat -> return pet.name
     }
 }
 
@@ -587,16 +587,16 @@ func main() {
     var pet: Pet = Pet.Dog(myDog)
     print("Pet is: \(describePet(pet))")
 
-    // Pattern binding: access the underlying Dog value via 'dog'
+    // Type narrowing: 'pet' is narrowed to Dog in this case
     switch (pet) {
-        Pet.Dog -> print("It's a dog named \(dog.name)!")
-        Pet.Cat -> print("It's a cat named \(cat.name)!")
+        Pet.Dog -> print("It's a dog named \(pet.name)!")
+        Pet.Cat -> print("It's a cat named \(pet.name)!")
     }
 
-    var val: Value = Value.Int(42)
-    switch (val) {
-        Value.Int -> print("integer: \(int)")
-        Value.String -> print("string: \(string)")
+    var v: Value = Value.Int(42)
+    switch (v) {
+        Value.Int -> print("integer: \(v)")
+        Value.String -> print("string: \(v)")
     }
 
     var myCat: Cat = Cat { name: "Whiskers" }
@@ -621,9 +621,9 @@ Pet 2 name: Whiskers
 | AST | Added `UnionVariant`, `DeclarationKind.unionDecl` |
 | Parser | Added `parseUnionDecl()` |
 | Type.swift | Added `SlangType.unionType`, `UnionTypeInfo` |
-| TypeChecker | Union registration, checking, member access, switch exhaustiveness, pattern binding in switch cases |
+| TypeChecker | Union registration, checking, member access, switch exhaustiveness, type narrowing in switch cases |
 | Value.swift | Added `Value.unionInstance` |
-| Interpreter | Union construction, switch matching, pattern binding (binds lowercase variant name to value) |
+| Interpreter | Union construction, switch matching, type narrowing (shadows subject variable with narrowed type) |
 
 ### Tests Added
 
@@ -631,4 +631,4 @@ Pet 2 name: Whiskers
 - Parser tests for union declarations
 - TypeChecker tests for valid unions, error cases (unknown type, duplicate variant, non-exhaustive switch)
 - Interpreter tests for union construction, switch, switch expression
-- Pattern binding tests: struct field access, primitive binding, switch expressions with binding
+- Type narrowing tests: struct field access, primitive narrowing, switch expressions with narrowing

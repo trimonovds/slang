@@ -531,11 +531,16 @@ extension TypeChecker {
                 return
             }
 
+            // Extract subject variable name for type narrowing (if subject is a simple identifier)
+            var subjectVarName: String? = nil
+            if case .identifier(let name) = subject.kind {
+                subjectVarName = name
+            }
+
             var coveredVariants = Set<String>()
 
             for switchCase in cases {
                 // Pattern should be UnionName.VariantName (MemberAccessExpr)
-                var boundVariableName: String? = nil
                 var boundVariableType: SlangType? = nil
 
                 if case .memberAccess(let object, let member) = switchCase.pattern.kind,
@@ -550,20 +555,20 @@ extension TypeChecker {
                         }
                         coveredVariants.insert(member)
 
-                        // Bind the lowercase variant name to the underlying value type
-                        boundVariableName = member.lowercasedFirst
+                        // Get the underlying type for this variant
                         boundVariableType = unionInfo.variants[member]
                     }
                 } else {
                     error("Invalid switch pattern for union", at: switchCase.pattern.range)
                 }
 
-                // Check the body with bound variable in scope
+                // Check the body with narrowed subject variable in scope
                 let caseEnv = environment.createChild()
                 let savedEnv = environment
                 environment = caseEnv
 
-                if let varName = boundVariableName, let varType = boundVariableType {
+                // Shadow the subject variable with the narrowed type
+                if let varName = subjectVarName, let varType = boundVariableType {
                     environment.defineVariable(varName, type: varType)
                 }
 
@@ -920,9 +925,14 @@ extension TypeChecker {
             allCaseNames = Set(unionInfo.variants.keys)
             typeLabel = "union '\(unionName)'"
 
+            // Extract subject variable name for type narrowing (if subject is a simple identifier)
+            var subjectVarName: String? = nil
+            if case .identifier(let name) = subject.kind {
+                subjectVarName = name
+            }
+
             for switchCase in cases {
                 // Validate pattern: should be UnionName.VariantName
-                var boundVariableName: String? = nil
                 var boundVariableType: SlangType? = nil
 
                 if case .memberAccess(let object, let member) = switchCase.pattern.kind,
@@ -937,20 +947,20 @@ extension TypeChecker {
                         }
                         coveredCases.insert(member)
 
-                        // Bind the lowercase variant name to the underlying value type
-                        boundVariableName = member.lowercasedFirst
+                        // Get the underlying type for this variant
                         boundVariableType = unionInfo.variants[member]
                     }
                 } else {
                     error("Invalid switch pattern for union", at: switchCase.pattern.range)
                 }
 
-                // Get the return type from the case body with bound variable in scope
+                // Get the return type from the case body with narrowed subject variable in scope
                 let caseEnv = environment.createChild()
                 let savedEnv = environment
                 environment = caseEnv
 
-                if let varName = boundVariableName, let varType = boundVariableType {
+                // Shadow the subject variable with the narrowed type
+                if let varName = subjectVarName, let varType = boundVariableType {
                     environment.defineVariable(varName, type: varType)
                 }
 

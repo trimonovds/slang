@@ -576,10 +576,10 @@ struct InterpreterTests {
         try run(source, expectOutput: ["woof"])
     }
 
-    // MARK: - Union Pattern Binding Tests (v0.1.2)
+    // MARK: - Union Type Narrowing Tests (v0.1.2)
 
-    @Test("Union pattern binding - access struct field")
-    func unionPatternBindingStructField() throws {
+    @Test("Union type narrowing - access struct field")
+    func unionTypeNarrowingStructField() throws {
         let source = """
         struct Dog { name: String }
         struct Cat { name: String }
@@ -588,16 +588,16 @@ struct InterpreterTests {
         func main() {
             var pet: Pet = Pet.Dog(Dog { name: "Buddy" })
             switch (pet) {
-                Pet.Dog -> print(dog.name)
-                Pet.Cat -> print(cat.name)
+                Pet.Dog -> print(pet.name)
+                Pet.Cat -> print(pet.name)
             }
         }
         """
         try run(source, expectOutput: ["Buddy"])
     }
 
-    @Test("Union pattern binding - access cat variant")
-    func unionPatternBindingCatVariant() throws {
+    @Test("Union type narrowing - access cat variant")
+    func unionTypeNarrowingCatVariant() throws {
         let source = """
         struct Dog { name: String }
         struct Cat { name: String }
@@ -606,48 +606,48 @@ struct InterpreterTests {
         func main() {
             var pet: Pet = Pet.Cat(Cat { name: "Whiskers" })
             switch (pet) {
-                Pet.Dog -> print(dog.name)
-                Pet.Cat -> print(cat.name)
+                Pet.Dog -> print(pet.name)
+                Pet.Cat -> print(pet.name)
             }
         }
         """
         try run(source, expectOutput: ["Whiskers"])
     }
 
-    @Test("Union pattern binding - primitive Int")
-    func unionPatternBindingPrimitiveInt() throws {
+    @Test("Union type narrowing - primitive Int")
+    func unionTypeNarrowingPrimitiveInt() throws {
         let source = """
         union Value = Int | String
 
         func main() {
             var v: Value = Value.Int(42)
             switch (v) {
-                Value.Int -> print("number: \\(int)")
-                Value.String -> print("text: \\(string)")
+                Value.Int -> print("number: \\(v)")
+                Value.String -> print("text: \\(v)")
             }
         }
         """
         try run(source, expectOutput: ["number: 42"])
     }
 
-    @Test("Union pattern binding - primitive String")
-    func unionPatternBindingPrimitiveString() throws {
+    @Test("Union type narrowing - primitive String")
+    func unionTypeNarrowingPrimitiveString() throws {
         let source = """
         union Value = Int | String
 
         func main() {
             var v: Value = Value.String("hello")
             switch (v) {
-                Value.Int -> print("number: \\(int)")
-                Value.String -> print("text: \\(string)")
+                Value.Int -> print("number: \\(v)")
+                Value.String -> print("text: \\(v)")
             }
         }
         """
         try run(source, expectOutput: ["text: hello"])
     }
 
-    @Test("Union pattern binding - switch expression")
-    func unionPatternBindingSwitchExpr() throws {
+    @Test("Union type narrowing - switch expression")
+    func unionTypeNarrowingSwitchExpr() throws {
         let source = """
         struct Dog { name: String }
         struct Cat { name: String }
@@ -656,8 +656,8 @@ struct InterpreterTests {
         func main() {
             var pet: Pet = Pet.Dog(Dog { name: "Rex" })
             var name: String = switch (pet) {
-                Pet.Dog -> return dog.name
-                Pet.Cat -> return cat.name
+                Pet.Dog -> return pet.name
+                Pet.Cat -> return pet.name
             }
             print(name)
         }
@@ -665,8 +665,8 @@ struct InterpreterTests {
         try run(source, expectOutput: ["Rex"])
     }
 
-    @Test("Union pattern binding - complex struct")
-    func unionPatternBindingComplexStruct() throws {
+    @Test("Union type narrowing - complex struct")
+    func unionTypeNarrowingComplexStruct() throws {
         let source = """
         struct Loading { progress: Int }
         struct Success { value: Int }
@@ -676,17 +676,17 @@ struct InterpreterTests {
         func main() {
             var state: State = State.Loading(Loading { progress: 50 })
             switch (state) {
-                State.Loading -> print("Loading: \\(loading.progress)%")
-                State.Success -> print("Success: \\(success.value)")
-                State.Error -> print("Error: \\(error.message)")
+                State.Loading -> print("Loading: \\(state.progress)%")
+                State.Success -> print("Success: \\(state.value)")
+                State.Error -> print("Error: \\(state.message)")
             }
         }
         """
         try run(source, expectOutput: ["Loading: 50%"])
     }
 
-    @Test("Union pattern binding - in function")
-    func unionPatternBindingInFunction() throws {
+    @Test("Union type narrowing - in function")
+    func unionTypeNarrowingInFunction() throws {
         let source = """
         struct Dog { name: String }
         struct Cat { name: String }
@@ -694,14 +694,14 @@ struct InterpreterTests {
 
         func getPetName(pet: Pet) -> String {
             return switch (pet) {
-                Pet.Dog -> return dog.name
-                Pet.Cat -> return cat.name
+                Pet.Dog -> return pet.name
+                Pet.Cat -> return pet.name
             }
         }
 
         func main() {
-            var pet: Pet = Pet.Cat(Cat { name: "Felix" })
-            print(getPetName(pet))
+            var p: Pet = Pet.Cat(Cat { name: "Felix" })
+            print(getPetName(p))
         }
         """
         try run(source, expectOutput: ["Felix"])

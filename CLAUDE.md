@@ -106,11 +106,11 @@ Uses swift-argument-parser. Commands: `run`, `check`, `parse`, `tokenize`.
 - Unions can contain structs, enums, or primitives: `union Value = Int | String`
 - Values created with qualified constructors: `UnionType.VariantName(value)`
 - Pattern matching on unions in switch statements with exhaustiveness checking
-- **Pattern binding**: In switch cases, the lowercase variant name is automatically bound to the underlying value
+- **Type narrowing**: In switch cases, the subject variable is automatically narrowed to the underlying type
   ```slang
   switch (pet) {
-      Pet.Dog -> print("Dog: \(dog.name)")  // 'dog' is bound to Dog value
-      Pet.Cat -> print("Cat: \(cat.name)")  // 'cat' is bound to Cat value
+      Pet.Dog -> print("Dog: \(pet.name)")  // 'pet' is narrowed to Dog
+      Pet.Cat -> print("Cat: \(pet.name)")  // 'pet' is narrowed to Cat
   }
   ```
 - Works with primitives too:
@@ -118,8 +118,8 @@ Uses swift-argument-parser. Commands: `run`, `check`, `parse`, `tokenize`.
   union Value = Int | String
   var v: Value = Value.Int(42)
   switch (v) {
-      Value.Int -> print("number: \(int)")     // 'int' is bound
-      Value.String -> print("text: \(string)") // 'string' is bound
+      Value.Int -> print("number: \(v)")     // 'v' is narrowed to Int
+      Value.String -> print("text: \(v)")    // 'v' is narrowed to String
   }
   ```
 - Union switch expressions return values just like enum switch expressions
