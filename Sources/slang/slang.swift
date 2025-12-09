@@ -25,9 +25,37 @@ struct Run: ParsableCommand {
 
     mutating func run() throws {
         let source = try String(contentsOfFile: file, encoding: .utf8)
-        print("Running \(file)...")
-        print("Source has \(source.count) characters")
-        // TODO: Implement full pipeline
+        let lexer = Lexer(source: source, filename: file)
+
+        do {
+            let tokens = try lexer.tokenize()
+            var parser = Parser(tokens: tokens)
+            let declarations = try parser.parse()
+
+            let typeChecker = TypeChecker()
+            try typeChecker.check(declarations)
+
+            let interpreter = Interpreter()
+            try interpreter.interpret(declarations)
+        } catch let error as LexerError {
+            for diagnostic in error.diagnostics {
+                print(diagnostic)
+            }
+            throw ExitCode.failure
+        } catch let error as ParserError {
+            for diagnostic in error.diagnostics {
+                print(diagnostic)
+            }
+            throw ExitCode.failure
+        } catch let error as TypeCheckError {
+            for diagnostic in error.diagnostics {
+                print(diagnostic)
+            }
+            throw ExitCode.failure
+        } catch let error as RuntimeError {
+            print(error)
+            throw ExitCode.failure
+        }
     }
 }
 
