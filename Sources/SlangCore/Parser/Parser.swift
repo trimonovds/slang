@@ -524,6 +524,9 @@ extension Parser {
         let body: Statement
         if check(.leftBrace) {
             body = try parseBlockStmt()
+        } else if check(.keyword(.return)) {
+            // Handle return statements in switch expression cases
+            body = try parseReturnStmt()
         } else {
             let expr = try parseExpression()
             body = Statement(kind: .expression(expr: expr), range: expr.range)
@@ -843,9 +846,43 @@ extension Parser {
             try consume(.rightParen, message: "Expected ')' after expression")
             return expr
 
+        case .keyword(.switch):
+            return try parseSwitchExpr()
+
         default:
             throw error("Expected expression", at: token)
         }
+    }
+
+    private mutating func parseSwitchExpr() throws -> Expression {
+        let startToken = try consume(.keyword(.switch), message: "Expected 'switch'")
+        skipNewlines()
+
+        try consume(.leftParen, message: "Expected '(' after 'switch'")
+        skipNewlines()
+
+        let subject = try parseExpression()
+        skipNewlines()
+
+        try consume(.rightParen, message: "Expected ')' after switch subject")
+        skipNewlines()
+
+        try consume(.leftBrace, message: "Expected '{' after switch subject")
+        skipNewlines()
+
+        var cases: [SwitchCase] = []
+        while !check(.rightBrace) && !isAtEnd {
+            let switchCase = try parseSwitchCase()
+            cases.append(switchCase)
+            skipNewlines()
+        }
+
+        let endToken = try consume(.rightBrace, message: "Expected '}' after switch cases")
+
+        return Expression(
+            kind: .switchExpr(subject: subject, cases: cases),
+            range: startToken.range.extended(to: endToken.range)
+        )
     }
 
     private mutating func parseStringInterpolation(firstPart: String, startRange: SourceRange) throws -> Expression {

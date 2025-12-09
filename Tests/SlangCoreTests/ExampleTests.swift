@@ -103,4 +103,17 @@ struct ExampleTests {
             "First quadrant"
         ])
     }
+
+    @Test("switch_expr.slang - v0.1.1 switch expression")
+    func switchExprExample() throws {
+        let output = try runExample("switch_expr.slang")
+        #expect(output == [
+            "Original: up",
+            "Opposite:",
+            "down",
+            "Opposite of left:",
+            "right",
+            "Value of up: 0"
+        ])
+    }
 }

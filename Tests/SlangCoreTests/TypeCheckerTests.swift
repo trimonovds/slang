@@ -422,4 +422,137 @@ struct TypeCheckerTests {
         """
         try typeCheck(source)
     }
+
+    // MARK: - Switch Expression Tests (v0.1.1)
+
+    @Test("Valid: Switch expression basic")
+    func validSwitchExpression() throws {
+        let source = """
+        enum Direction {
+            case up
+            case down
+        }
+
+        func main() {
+            var dir: Direction = Direction.up
+            var opposite: Direction = switch (dir) {
+                Direction.up -> return Direction.down
+                Direction.down -> return Direction.up
+            }
+        }
+        """
+        try typeCheck(source)
+    }
+
+    @Test("Valid: Switch expression with blocks")
+    func validSwitchExpressionBlocks() throws {
+        let source = """
+        enum Color {
+            case red
+            case green
+        }
+
+        func main() {
+            var c: Color = Color.red
+            var value: Int = switch (c) {
+                Color.red -> { return 1 }
+                Color.green -> { return 2 }
+            }
+        }
+        """
+        try typeCheck(source)
+    }
+
+    @Test("Error: Switch expression non-exhaustive")
+    func errorSwitchExprNonExhaustive() {
+        let source = """
+        enum Direction {
+            case up
+            case down
+            case left
+            case right
+        }
+
+        func main() {
+            var dir: Direction = Direction.up
+            var x: Direction = switch (dir) {
+                Direction.up -> return Direction.down
+                Direction.down -> return Direction.up
+            }
+        }
+        """
+        expectTypeError(source, containing: "Switch expression must be exhaustive")
+    }
+
+    @Test("Error: Switch expression type mismatch between cases")
+    func errorSwitchExprTypeMismatch() {
+        let source = """
+        enum Direction {
+            case up
+            case down
+        }
+
+        func main() {
+            var dir: Direction = Direction.up
+            var x: Int = switch (dir) {
+                Direction.up -> return 1
+                Direction.down -> return "two"
+            }
+        }
+        """
+        expectTypeError(source, containing: "Switch expression cases must all return the same type")
+    }
+
+    @Test("Error: Switch expression case without return")
+    func errorSwitchExprNoReturn() {
+        let source = """
+        enum Color {
+            case red
+            case green
+        }
+
+        func main() {
+            var c: Color = Color.red
+            var x: Int = switch (c) {
+                Color.red -> return 1
+                Color.green -> print("green")
+            }
+        }
+        """
+        expectTypeError(source, containing: "Switch expression case must return a value")
+    }
+
+    @Test("Error: Switch expression duplicate case")
+    func errorSwitchExprDuplicateCase() {
+        let source = """
+        enum Direction {
+            case up
+            case down
+        }
+
+        func main() {
+            var dir: Direction = Direction.up
+            var x: Direction = switch (dir) {
+                Direction.up -> return Direction.down
+                Direction.up -> return Direction.down
+                Direction.down -> return Direction.up
+            }
+        }
+        """
+        expectTypeError(source, containing: "Duplicate case 'up' in switch expression")
+    }
+
+    @Test("Error: Switch expression on non-enum")
+    func errorSwitchExprNonEnum() {
+        let source = """
+        func main() {
+            var x: Int = 42
+            var y: Int = switch (x) {
+                1 -> return 10
+                2 -> return 20
+            }
+        }
+        """
+        expectTypeError(source, containing: "Switch expression subject must be an enum type")
+    }
 }

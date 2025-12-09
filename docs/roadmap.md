@@ -411,14 +411,82 @@ print("\(someInt)")      // OK - interpolate to String
 // print(42)             // Error - must be String
 ```
 
-## v0.1.1
-### Syntax Notes
+## v0.1.1 - Switch Expressions
+
+**Goal:** Add switch expressions that return values.
+
+### New Feature: Switch Expression
+
+Switch can now be used as an expression that returns a value, allowing assignment to variables:
+
 ```slang
 var dir: Direction = Direction.up
 var oppositeDirection: Direction = switch (dir) {
-        Direction.up -> return Direction.down
-        Direction.down -> { return Direction.up }
-        Direction.left -> return Direction.right
-        Direction.right -> { return Direction.left }
-    }
+    Direction.up -> return Direction.down
+    Direction.down -> return Direction.up
+    Direction.left -> return Direction.right
+    Direction.right -> return Direction.left
+}
 ```
+
+### Syntax Options
+
+**Single-line return:**
+```slang
+Direction.up -> return Direction.down
+```
+
+**Block body with return:**
+```slang
+Direction.up -> {
+    return Direction.down
+}
+```
+
+### Type Checking
+
+- All cases must return the same type
+- Switch must be exhaustive (cover all enum cases)
+- Each case must have a `return` statement
+
+### Example Program
+
+```slang
+enum Direction {
+    case up
+    case down
+    case left
+    case right
+}
+
+func opposite(dir: Direction) -> Direction {
+    return switch (dir) {
+        Direction.up -> return Direction.down
+        Direction.down -> return Direction.up
+        Direction.left -> return Direction.right
+        Direction.right -> return Direction.left
+    }
+}
+
+func main() {
+    var dir: Direction = Direction.up
+    var opp: Direction = opposite(dir)
+    // opp is Direction.down
+}
+```
+
+### Changes
+
+| Component | Change |
+|-----------|--------|
+| AST | Added `ExpressionKind.switchExpr` |
+| Parser | Added `parseSwitchExpr()`, modified `parsePrimary()` |
+| TypeChecker | Added `checkSwitchExpr()` with type validation |
+| Interpreter | Added `evaluateSwitchExpr()` |
+
+### Tests Added
+
+- Parser tests for switch expression parsing
+- TypeChecker tests for error cases (non-exhaustive, type mismatch, missing return)
+- Interpreter tests for execution
+- Example test: `switch_expr.slang`

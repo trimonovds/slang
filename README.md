@@ -7,7 +7,8 @@ A statically-typed programming language with a clean, modern syntax. Built in Sw
 - **Static typing** with type inference
 - **Structs** and **enums** with pattern matching
 - **String interpolation** using `\(expr)` syntax
-- **C-style for loops** and **switch expressions**
+- **C-style for loops** and **switch statements/expressions**
+- **Switch expressions** that return values (v0.1.1)
 - **Colored error messages** with source context
 
 ## Quick Start
@@ -83,6 +84,20 @@ slang tokenize <file>  # Show tokens (debug)
 slang --version        # Show version
 ```
 
+## Switch Expressions (v0.1.1)
+
+Switch can be used as an expression that returns a value:
+
+```slang
+var dir: Direction = Direction.up
+var opposite: Direction = switch (dir) {
+    Direction.up -> return Direction.down
+    Direction.down -> return Direction.up
+    Direction.left -> return Direction.right
+    Direction.right -> return Direction.left
+}
+```
+
 ## Examples
 
 See [`Tests/Examples/`](Tests/Examples/) for complete example programs:
@@ -93,6 +108,7 @@ See [`Tests/Examples/`](Tests/Examples/) for complete example programs:
 - `enums.slang` - Enums and switch
 - `loops.slang` - For loops
 - `full.slang` - Complete v0.1 feature demo
+- `switch_expr.slang` - Switch expressions (v0.1.1)
 
 ## Project Structure
 

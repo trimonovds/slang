@@ -317,4 +317,143 @@ struct InterpreterTests {
         """
         try run(source, expectOutput: ["equal"])
     }
+
+    // MARK: - Switch Expression Tests (v0.1.1)
+
+    @Test("Switch expression - basic enum return")
+    func switchExpressionBasic() throws {
+        let source = """
+        enum Direction {
+            case up
+            case down
+            case left
+            case right
+        }
+
+        func main() {
+            var dir: Direction = Direction.up
+            var opposite: Direction = switch (dir) {
+                Direction.up -> return Direction.down
+                Direction.down -> return Direction.up
+                Direction.left -> return Direction.right
+                Direction.right -> return Direction.left
+            }
+            switch (opposite) {
+                Direction.up -> print("up")
+                Direction.down -> print("down")
+                Direction.left -> print("left")
+                Direction.right -> print("right")
+            }
+        }
+        """
+        try run(source, expectOutput: ["down"])
+    }
+
+    @Test("Switch expression - with block bodies")
+    func switchExpressionBlockBodies() throws {
+        let source = """
+        enum Color {
+            case red
+            case green
+            case blue
+        }
+
+        func main() {
+            var c: Color = Color.green
+            var value: Int = switch (c) {
+                Color.red -> { return 1 }
+                Color.green -> { return 2 }
+                Color.blue -> { return 3 }
+            }
+            print("\\(value)")
+        }
+        """
+        try run(source, expectOutput: ["2"])
+    }
+
+    @Test("Switch expression - mixed single-line and block")
+    func switchExpressionMixed() throws {
+        let source = """
+        enum Status {
+            case active
+            case inactive
+        }
+
+        func main() {
+            var s: Status = Status.active
+            var msg: String = switch (s) {
+                Status.active -> return "on"
+                Status.inactive -> {
+                    return "off"
+                }
+            }
+            print(msg)
+        }
+        """
+        try run(source, expectOutput: ["on"])
+    }
+
+    @Test("Switch expression - returning Int")
+    func switchExpressionInt() throws {
+        let source = """
+        enum Size {
+            case small
+            case medium
+            case large
+        }
+
+        func main() {
+            var size: Size = Size.large
+            var pixels: Int = switch (size) {
+                Size.small -> return 100
+                Size.medium -> return 200
+                Size.large -> return 300
+            }
+            print("\\(pixels)")
+        }
+        """
+        try run(source, expectOutput: ["300"])
+    }
+
+    @Test("Switch expression - returning String")
+    func switchExpressionString() throws {
+        let source = """
+        enum Level {
+            case low
+            case high
+        }
+
+        func main() {
+            var lvl: Level = Level.low
+            var desc: String = switch (lvl) {
+                Level.low -> return "Low level"
+                Level.high -> return "High level"
+            }
+            print(desc)
+        }
+        """
+        try run(source, expectOutput: ["Low level"])
+    }
+
+    @Test("Switch expression - all cases covered")
+    func switchExpressionAllCases() throws {
+        let source = """
+        enum TrafficLight {
+            case red
+            case yellow
+            case green
+        }
+
+        func main() {
+            var light: TrafficLight = TrafficLight.yellow
+            var action: String = switch (light) {
+                TrafficLight.red -> return "Stop"
+                TrafficLight.yellow -> return "Caution"
+                TrafficLight.green -> return "Go"
+            }
+            print(action)
+        }
+        """
+        try run(source, expectOutput: ["Caution"])
+    }
 }

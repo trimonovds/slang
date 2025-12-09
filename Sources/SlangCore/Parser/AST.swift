@@ -152,6 +152,9 @@ public indirect enum ExpressionKind: Sendable {
 
     // Struct initialization
     case structInit(typeName: String, fields: [FieldInit])
+
+    // Switch expression (returns a value)
+    case switchExpr(subject: Expression, cases: [SwitchCase])
 }
 
 /// An expression with source location

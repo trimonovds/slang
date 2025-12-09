@@ -522,4 +522,93 @@ struct ParserTests {
         #expect(decls[2].name == "add")
         #expect(decls[3].name == "main")
     }
+
+    // MARK: - Switch Expression Tests (v0.1.1)
+
+    @Test("Switch expression in variable initialization")
+    func switchExpressionParsing() throws {
+        let source = """
+        func main() {
+            var x: Direction = switch (dir) {
+                Direction.up -> return Direction.down
+                Direction.down -> return Direction.up
+            }
+        }
+        """
+        let decls = try parse(source)
+
+        guard case .function(_, _, _, let body) = decls[0].kind,
+              case .block(let statements) = body.kind,
+              case .varDecl("x", _, let initializer) = statements[0].kind,
+              case .switchExpr(let subject, let cases) = initializer.kind else {
+            Issue.record("Expected switch expression in variable initialization")
+            return
+        }
+        guard case .identifier("dir") = subject.kind else {
+            Issue.record("Expected identifier 'dir' as subject")
+            return
+        }
+        #expect(cases.count == 2)
+    }
+
+    @Test("Switch expression with block bodies")
+    func switchExpressionWithBlocks() throws {
+        let source = """
+        func main() {
+            var x: Int = switch (c) {
+                Color.red -> { return 1 }
+                Color.green -> { return 2 }
+            }
+        }
+        """
+        let decls = try parse(source)
+
+        guard case .function(_, _, _, let body) = decls[0].kind,
+              case .block(let statements) = body.kind,
+              case .varDecl("x", _, let initializer) = statements[0].kind,
+              case .switchExpr(_, let cases) = initializer.kind else {
+            Issue.record("Expected switch expression")
+            return
+        }
+        #expect(cases.count == 2)
+        // First case should have a block body
+        guard case .block(_) = cases[0].body.kind else {
+            Issue.record("Expected block body for first case")
+            return
+        }
+    }
+
+    @Test("Switch expression mixed case styles")
+    func switchExpressionMixedStyles() throws {
+        let source = """
+        func main() {
+            var x: String = switch (s) {
+                Status.on -> return "active"
+                Status.off -> {
+                    return "inactive"
+                }
+            }
+        }
+        """
+        let decls = try parse(source)
+
+        guard case .function(_, _, _, let body) = decls[0].kind,
+              case .block(let statements) = body.kind,
+              case .varDecl("x", _, let initializer) = statements[0].kind,
+              case .switchExpr(_, let cases) = initializer.kind else {
+            Issue.record("Expected switch expression")
+            return
+        }
+        #expect(cases.count == 2)
+        // First case should have return statement body
+        guard case .returnStmt(_) = cases[0].body.kind else {
+            Issue.record("Expected return statement for first case")
+            return
+        }
+        // Second case should have block body
+        guard case .block(_) = cases[1].body.kind else {
+            Issue.record("Expected block body for second case")
+            return
+        }
+    }
 }

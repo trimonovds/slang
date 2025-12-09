@@ -265,6 +265,9 @@ extension Interpreter {
 
         case .structInit(let typeName, let fields):
             return try evaluateStructInit(typeName: typeName, fields: fields, range: expr.range)
+
+        case .switchExpr(let subject, let cases):
+            return try evaluateSwitchExpr(subject: subject, cases: cases, range: expr.range)
         }
     }
 
@@ -583,5 +586,27 @@ extension Interpreter {
         }
 
         return .structInstance(typeName: typeName, fields: fieldValues)
+    }
+
+    private func evaluateSwitchExpr(subject: Expression, cases: [SwitchCase], range: SourceRange) throws -> Value {
+        let subjectValue = try evaluate(subject)
+
+        for switchCase in cases {
+            let patternValue = try evaluate(switchCase.pattern)
+
+            if subjectValue == patternValue {
+                // Execute the case body and capture the return value
+                do {
+                    try executeStatement(switchCase.body)
+                    // If we get here without a return, that's an error
+                    throw RuntimeError("Switch expression case did not return a value", at: switchCase.body.range)
+                } catch let returnValue as ReturnValue {
+                    return returnValue.value
+                }
+            }
+        }
+
+        // Should not reach here if type checker verified exhaustiveness
+        throw RuntimeError("No matching case in switch expression", at: range)
     }
 }

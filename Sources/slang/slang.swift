@@ -295,6 +295,9 @@ struct Parse: ParsableCommand {
         case .structInit(let typeName, let fields):
             let fieldsStr = fields.map { "\($0.name): \(exprString($0.value))" }.joined(separator: ", ")
             return "\(typeName) { \(fieldsStr) }"
+        case .switchExpr(let subject, let cases):
+            let casesStr = cases.map { "\(exprString($0.pattern)) -> ..." }.joined(separator: ", ")
+            return "switch (\(exprString(subject))) { \(casesStr) }"
         }
     }
 }

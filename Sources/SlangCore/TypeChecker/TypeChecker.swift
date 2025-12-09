@@ -476,6 +476,9 @@ extension TypeChecker {
 
         case .structInit(let typeName, let fields):
             return checkStructInit(typeName: typeName, fields: fields, range: expr.range)
+
+        case .switchExpr(let subject, let cases):
+            return checkSwitchExpr(subject: subject, cases: cases, range: expr.range)
         }
     }
 
@@ -692,5 +695,103 @@ extension TypeChecker {
         }
 
         return .structType(name: typeName)
+    }
+
+    private func checkSwitchExpr(subject: Expression, cases: [SwitchCase], range: SourceRange) -> SlangType {
+        let subjectType = checkExpression(subject)
+
+        // Switch expression requires enum type
+        guard case .enumType(let enumName) = subjectType else {
+            if subjectType != .error {
+                error("Switch expression subject must be an enum type, got '\(subjectType)'", at: subject.range)
+            }
+            return .error
+        }
+
+        guard let enumInfo = environment.lookupEnumType(enumName) else {
+            error("Unknown enum type '\(enumName)'", at: subject.range)
+            return .error
+        }
+
+        var coveredCases = Set<String>()
+        var resultType: SlangType? = nil
+
+        for switchCase in cases {
+            // Validate pattern: should be EnumName.caseName
+            if case .memberAccess(let object, let member) = switchCase.pattern.kind,
+               case .identifier(let identName) = object.kind {
+                if identName != enumName {
+                    error("Expected case of enum '\(enumName)', got '\(identName)'", at: switchCase.pattern.range)
+                } else if !enumInfo.cases.contains(member) {
+                    error("'\(member)' is not a case of enum '\(enumName)'", at: switchCase.pattern.range)
+                } else {
+                    if coveredCases.contains(member) {
+                        error("Duplicate case '\(member)' in switch expression", at: switchCase.pattern.range)
+                    }
+                    coveredCases.insert(member)
+                }
+            } else {
+                error("Invalid switch pattern for enum", at: switchCase.pattern.range)
+            }
+
+            // Get the return type from the case body
+            let caseReturnType = getReturnTypeFromStatement(switchCase.body)
+
+            if caseReturnType == nil {
+                error("Switch expression case must return a value", at: switchCase.body.range)
+            } else if let caseType = caseReturnType, caseType != .error {
+                if let existingType = resultType {
+                    if existingType != caseType && existingType != .error {
+                        error("Switch expression cases must all return the same type. Expected '\(existingType)', got '\(caseType)'", at: switchCase.body.range)
+                    }
+                } else {
+                    resultType = caseType
+                }
+            }
+        }
+
+        // Check exhaustiveness
+        let missingCases = enumInfo.cases.subtracting(coveredCases)
+        if !missingCases.isEmpty {
+            let missing = missingCases.sorted().joined(separator: ", ")
+            error("Switch expression must be exhaustive. Missing cases: \(missing)", at: range)
+        }
+
+        return resultType ?? .error
+    }
+
+    /// Extract the return type from a statement (used for switch expression cases)
+    private func getReturnTypeFromStatement(_ stmt: Statement) -> SlangType? {
+        switch stmt.kind {
+        case .returnStmt(let value):
+            if let val = value {
+                return checkExpression(val)
+            }
+            return .void
+
+        case .block(let statements):
+            // Find return statement in block
+            for s in statements {
+                if let retType = getReturnTypeFromStatement(s) {
+                    return retType
+                }
+            }
+            return nil
+
+        case .expression(let expr):
+            // Single expression that's a return statement wrapped
+            if case .returnStmt(let value) = stmt.kind {
+                if let val = value {
+                    return checkExpression(val)
+                }
+                return .void
+            }
+            // For non-return expressions, we don't have a return type
+            _ = checkExpression(expr)
+            return nil
+
+        default:
+            return nil
+        }
     }
 }

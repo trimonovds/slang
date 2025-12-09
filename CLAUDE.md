@@ -81,6 +81,18 @@ Uses swift-argument-parser. Commands: `run`, `check`, `parse`, `tokenize`.
 - Entry point: `func main() {}`
 - `print()` only accepts String (use interpolation for other types)
 
+## Language Features (v0.1.1)
+
+- **Switch expressions**: Switch can return a value and be assigned to variables
+  ```slang
+  var opposite: Direction = switch (dir) {
+      Direction.up -> return Direction.down
+      Direction.down -> return Direction.up
+  }
+  ```
+- Cases use `return` to provide values (single-line or block body)
+- Type checker validates: exhaustiveness, consistent return types, return presence
+
 ## Key Patterns
 
 - AST nodes use wrapper structs (e.g., `Expression`) containing a `Kind` enum and `SourceRange`
