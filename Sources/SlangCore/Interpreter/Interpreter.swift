@@ -128,8 +128,37 @@ extension Interpreter {
             }
             environment = savedEnv
 
-        case .varDecl(let name, _, let initializer):
-            let value = try evaluate(initializer)
+        case .varDecl(let name, let type, let initializer):
+            var value = try evaluate(initializer)
+
+            // Handle type-based transformations
+            switch type.kind {
+            case .optional:
+                // Wrap non-optional value in .some() if needed
+                if case .none = value {
+                    // Keep as none
+                } else if case .some = value {
+                    // Already wrapped
+                } else {
+                    value = .some(value)
+                }
+
+            case .set:
+                // Convert array literal to set (deduplicate)
+                if case .arrayInstance(let elements) = value {
+                    var deduped: [Value] = []
+                    for elem in elements {
+                        if !deduped.contains(where: { Value.valuesEqual($0, elem) }) {
+                            deduped.append(elem)
+                        }
+                    }
+                    value = .setInstance(elements: deduped)
+                }
+
+            default:
+                break
+            }
+
             environment.define(name, value: value)
 
         case .expression(let expr):
@@ -282,6 +311,9 @@ extension Interpreter {
         case .boolLiteral(let value):
             return .bool(value)
 
+        case .nilLiteral:
+            return .none
+
         case .stringInterpolation(let parts):
             return try evaluateStringInterpolation(parts: parts)
 
@@ -300,8 +332,17 @@ extension Interpreter {
         case .memberAccess(let object, let member):
             return try evaluateMemberAccess(object: object, member: member, range: expr.range)
 
+        case .subscriptAccess(let object, let index):
+            return try evaluateSubscriptAccess(object: object, index: index, range: expr.range)
+
         case .structInit(let typeName, let fields):
             return try evaluateStructInit(typeName: typeName, fields: fields, range: expr.range)
+
+        case .arrayLiteral(let elements):
+            return try evaluateArrayLiteral(elements: elements)
+
+        case .dictionaryLiteral(let pairs):
+            return try evaluateDictionaryLiteral(pairs: pairs)
 
         case .switchExpr(let subject, let cases):
             return try evaluateSwitchExpr(subject: subject, cases: cases, range: expr.range)
@@ -467,6 +508,53 @@ extension Interpreter {
     }
 
     private func evaluateAssignment(left: Expression, op: BinaryOperator, right: Expression, range: SourceRange) throws -> Value {
+        // Handle subscript assignment: array[i] = value or dict[key] = value
+        if case .subscriptAccess(let object, let index) = left.kind {
+            guard op == .assign else {
+                throw RuntimeError("Compound assignment to subscript not supported", at: range)
+            }
+
+            guard case .identifier(let name) = object.kind else {
+                throw RuntimeError("Subscript assignment requires a variable", at: object.range)
+            }
+
+            let rightVal = try evaluate(right)
+            let indexVal = try evaluate(index)
+
+            guard var objectVal = environment.get(name) else {
+                throw RuntimeError("Undefined variable '\(name)'", at: object.range)
+            }
+
+            // Array subscript assignment
+            if case .arrayInstance(var elements) = objectVal {
+                guard case .int(let idx) = indexVal else {
+                    throw RuntimeError("Array subscript index must be Int", at: index.range)
+                }
+                if idx < 0 || idx >= elements.count {
+                    throw RuntimeError("Array index \(idx) out of bounds", at: range)
+                }
+                elements[idx] = rightVal
+                objectVal = .arrayInstance(elements: elements)
+                environment.assign(name, value: objectVal)
+                return rightVal
+            }
+
+            // Dictionary subscript assignment
+            if case .dictionaryInstance(var pairs) = objectVal {
+                // Check if key exists, update or append
+                if let existingIdx = pairs.firstIndex(where: { Value.valuesEqual($0.key, indexVal) }) {
+                    pairs[existingIdx] = (key: indexVal, value: rightVal)
+                } else {
+                    pairs.append((key: indexVal, value: rightVal))
+                }
+                objectVal = .dictionaryInstance(pairs: pairs)
+                environment.assign(name, value: objectVal)
+                return rightVal
+            }
+
+            throw RuntimeError("Cannot assign to subscript of \(objectVal)", at: range)
+        }
+
         guard case .identifier(let name) = left.kind else {
             throw RuntimeError("Invalid assignment target", at: left.range)
         }
@@ -505,6 +593,26 @@ extension Interpreter {
                     newValue = .int(l / r)
                 } else {
                     throw RuntimeError("Cannot apply /= to \(currentValue) and \(rightVal)", at: range)
+                }
+            default:
+                break
+            }
+        }
+
+        // Check if we're assigning to an optional variable - wrap if needed
+        if let currentValue = environment.get(name) {
+            // If the variable currently holds an optional (.some or .none),
+            // wrap the new value in .some() if it's not already optional
+            switch currentValue {
+            case .some, .none:
+                // Variable is optional
+                if case .some = newValue {
+                    // Already wrapped
+                } else if case .none = newValue {
+                    // nil stays as nil
+                } else {
+                    // Wrap non-optional value
+                    newValue = .some(newValue)
                 }
             default:
                 break
@@ -550,6 +658,108 @@ extension Interpreter {
                 }
                 let argValue = try evaluate(arguments[0])
                 return .unionInstance(unionType: unionType, variantName: variantName, value: argValue)
+            }
+
+            // Check for collection method calls
+            if case .arrayInstance(var elements) = objectVal {
+                switch variantName {
+                case "append":
+                    guard arguments.count == 1 else {
+                        throw RuntimeError("append() expects 1 argument", at: range)
+                    }
+                    let argValue = try evaluate(arguments[0])
+                    elements.append(argValue)
+                    // Update the array in the environment
+                    if case .identifier(let name) = object.kind {
+                        environment.assign(name, value: .arrayInstance(elements: elements))
+                    }
+                    return .void
+
+                case "removeAt":
+                    guard arguments.count == 1 else {
+                        throw RuntimeError("removeAt() expects 1 argument", at: range)
+                    }
+                    let indexVal = try evaluate(arguments[0])
+                    guard case .int(let idx) = indexVal else {
+                        throw RuntimeError("removeAt() expects Int argument", at: arguments[0].range)
+                    }
+                    if idx < 0 || idx >= elements.count {
+                        throw RuntimeError("removeAt() index \(idx) out of bounds", at: range)
+                    }
+                    elements.remove(at: idx)
+                    // Update the array in the environment
+                    if case .identifier(let name) = object.kind {
+                        environment.assign(name, value: .arrayInstance(elements: elements))
+                    }
+                    return .void
+
+                default:
+                    break
+                }
+            }
+
+            if case .setInstance(var elements) = objectVal {
+                switch variantName {
+                case "contains":
+                    guard arguments.count == 1 else {
+                        throw RuntimeError("contains() expects 1 argument", at: range)
+                    }
+                    let argValue = try evaluate(arguments[0])
+                    let found = elements.contains { Value.valuesEqual($0, argValue) }
+                    return .bool(found)
+
+                case "insert":
+                    guard arguments.count == 1 else {
+                        throw RuntimeError("insert() expects 1 argument", at: range)
+                    }
+                    let argValue = try evaluate(arguments[0])
+                    // Only insert if not already present
+                    if !elements.contains(where: { Value.valuesEqual($0, argValue) }) {
+                        elements.append(argValue)
+                    }
+                    // Update the set in the environment
+                    if case .identifier(let name) = object.kind {
+                        environment.assign(name, value: .setInstance(elements: elements))
+                    }
+                    return .void
+
+                case "remove":
+                    guard arguments.count == 1 else {
+                        throw RuntimeError("remove() expects 1 argument", at: range)
+                    }
+                    let argValue = try evaluate(arguments[0])
+                    if let idx = elements.firstIndex(where: { Value.valuesEqual($0, argValue) }) {
+                        elements.remove(at: idx)
+                        // Update the set in the environment
+                        if case .identifier(let name) = object.kind {
+                            environment.assign(name, value: .setInstance(elements: elements))
+                        }
+                        return .bool(true)
+                    }
+                    return .bool(false)
+
+                default:
+                    break
+                }
+            }
+
+            if case .dictionaryInstance(var pairs) = objectVal {
+                switch variantName {
+                case "removeKey":
+                    guard arguments.count == 1 else {
+                        throw RuntimeError("removeKey() expects 1 argument", at: range)
+                    }
+                    let keyVal = try evaluate(arguments[0])
+                    pairs.removeAll { Value.valuesEqual($0.key, keyVal) }
+                    // Update the dictionary in the environment
+                    if case .identifier(let name) = object.kind {
+                        environment.assign(name, value: .dictionaryInstance(pairs: pairs))
+                    }
+                    return .void
+
+                default:
+                    break
+                }
             }
         }
 
@@ -631,7 +841,76 @@ extension Interpreter {
             return value
         }
 
+        // Array properties
+        if case .arrayInstance(let elements) = objectVal {
+            if member == "count" { return .int(elements.count) }
+            if member == "isEmpty" { return .bool(elements.isEmpty) }
+            if member == "first" { return elements.first.map { .some($0) } ?? .none }
+            if member == "last" { return elements.last.map { .some($0) } ?? .none }
+        }
+
+        // Dictionary properties
+        if case .dictionaryInstance(let pairs) = objectVal {
+            if member == "count" { return .int(pairs.count) }
+            if member == "isEmpty" { return .bool(pairs.isEmpty) }
+            if member == "keys" { return .arrayInstance(elements: pairs.map { $0.key }) }
+            if member == "values" { return .arrayInstance(elements: pairs.map { $0.value }) }
+        }
+
+        // Set properties
+        if case .setInstance(let elements) = objectVal {
+            if member == "count" { return .int(elements.count) }
+            if member == "isEmpty" { return .bool(elements.isEmpty) }
+        }
+
         throw RuntimeError("Cannot access member '\(member)' on \(objectVal)", at: range)
+    }
+
+    private func evaluateSubscriptAccess(object: Expression, index: Expression, range: SourceRange) throws -> Value {
+        let objectVal = try evaluate(object)
+        let indexVal = try evaluate(index)
+
+        // Array subscript
+        if case .arrayInstance(let elements) = objectVal {
+            guard case .int(let idx) = indexVal else {
+                throw RuntimeError("Array subscript index must be Int", at: index.range)
+            }
+            if idx < 0 || idx >= elements.count {
+                throw RuntimeError("Array index \(idx) out of bounds (array has \(elements.count) elements)", at: range)
+            }
+            return elements[idx]
+        }
+
+        // Dictionary subscript
+        if case .dictionaryInstance(let pairs) = objectVal {
+            // Find key in pairs (linear search)
+            for pair in pairs {
+                if Value.valuesEqual(pair.key, indexVal) {
+                    return .some(pair.value)
+                }
+            }
+            return .none
+        }
+
+        throw RuntimeError("Cannot subscript \(objectVal)", at: range)
+    }
+
+    private func evaluateArrayLiteral(elements: [Expression]) throws -> Value {
+        var values: [Value] = []
+        for elem in elements {
+            values.append(try evaluate(elem))
+        }
+        return .arrayInstance(elements: values)
+    }
+
+    private func evaluateDictionaryLiteral(pairs: [DictionaryPair]) throws -> Value {
+        var result: [(key: Value, value: Value)] = []
+        for pair in pairs {
+            let key = try evaluate(pair.key)
+            let value = try evaluate(pair.value)
+            result.append((key: key, value: value))
+        }
+        return .dictionaryInstance(pairs: result)
     }
 
     private func evaluateStructInit(typeName: String, fields: [FieldInit], range: SourceRange) throws -> Value {

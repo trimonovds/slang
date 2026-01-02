@@ -199,29 +199,71 @@ public final class TypeChecker: @unchecked Sendable {
     // MARK: - Type Resolution
 
     private func resolveType(_ annotation: TypeAnnotation) -> SlangType {
-        // Handle type inference placeholder
-        if annotation.name == "_infer" {
-            return .error  // Type checker should infer from initializer
-        }
+        switch annotation.kind {
+        case .simple(let name):
+            // Handle type inference placeholder
+            if name == "_infer" {
+                return .error  // Type checker should infer from initializer
+            }
 
-        // First check if it's a built-in type using the enum
-        if let builtin = annotation.asBuiltin {
-            return SlangType.from(builtin: builtin)
-        }
+            // First check if it's a built-in type using the enum
+            if let builtin = BuiltinTypeName(rawValue: name) {
+                return SlangType.from(builtin: builtin)
+            }
 
-        // Check for user-defined types
-        if environment.lookupStructType(annotation.name) != nil {
-            return .structType(name: annotation.name)
-        }
-        if environment.lookupEnumType(annotation.name) != nil {
-            return .enumType(name: annotation.name)
-        }
-        if environment.lookupUnionType(annotation.name) != nil {
-            return .unionType(name: annotation.name)
-        }
+            // Check for user-defined types
+            if environment.lookupStructType(name) != nil {
+                return .structType(name: name)
+            }
+            if environment.lookupEnumType(name) != nil {
+                return .enumType(name: name)
+            }
+            if environment.lookupUnionType(name) != nil {
+                return .unionType(name: name)
+            }
 
-        error("Unknown type '\(annotation.name)'", at: annotation.range)
-        return .error
+            error("Unknown type '\(name)'", at: annotation.range)
+            return .error
+
+        case .optional(let wrapped):
+            let wrappedType = resolveType(wrapped)
+            if wrappedType == .error {
+                return .error
+            }
+            return .optionalType(wrappedType: wrappedType)
+
+        case .array(let element):
+            let elementType = resolveType(element)
+            if elementType == .error {
+                return .error
+            }
+            return .arrayType(elementType: elementType)
+
+        case .dictionary(let key, let value):
+            let keyType = resolveType(key)
+            let valueType = resolveType(value)
+            if keyType == .error || valueType == .error {
+                return .error
+            }
+            // Validate key type is primitive
+            if !keyType.isPrimitive {
+                error("Dictionary key type must be a primitive type (Int, String, Bool, Float), got '\(keyType)'", at: key.range)
+                return .error
+            }
+            return .dictionaryType(keyType: keyType, valueType: valueType)
+
+        case .set(let element):
+            let elementType = resolveType(element)
+            if elementType == .error {
+                return .error
+            }
+            // Validate element type is primitive
+            if !elementType.isPrimitive {
+                error("Set element type must be a primitive type (Int, String, Bool, Float), got '\(elementType)'", at: element.range)
+                return .error
+            }
+            return .setType(elementType: elementType)
+        }
     }
 
     /// Resolve a variant type name to a SlangType
@@ -404,7 +446,7 @@ extension TypeChecker {
     }
 
     private func checkVarDecl(name: String, type: TypeAnnotation, initializer: Expression, range: SourceRange) {
-        let initType = checkExpression(initializer)
+        let initType = checkExpression(initializer, expectedType: resolveType(type))
 
         // Handle type inference (when type annotation is "_infer")
         let declaredType: SlangType
@@ -415,11 +457,28 @@ extension TypeChecker {
             declaredType = resolveType(type)
         }
 
-        if declaredType != .error && initType != .error && declaredType != initType {
-            error("Cannot assign value of type '\(initType)' to variable of type '\(declaredType)'", at: range)
+        if declaredType != .error && initType != .error {
+            if !isAssignable(from: initType, to: declaredType) {
+                error("Cannot assign value of type '\(initType)' to variable of type '\(declaredType)'", at: range)
+            }
         }
 
         environment.defineVariable(name, type: declaredType)
+    }
+
+    /// Check if a value of type `from` can be assigned to a variable of type `to`
+    private func isAssignable(from: SlangType, to: SlangType) -> Bool {
+        // Exact match
+        if from == to {
+            return true
+        }
+
+        // T can be assigned to T?
+        if case .optionalType(let wrapped) = to {
+            return from == wrapped || isAssignable(from: from, to: wrapped)
+        }
+
+        return false
     }
 
     private func checkReturn(value: Expression?, range: SourceRange) {
@@ -593,7 +652,7 @@ extension TypeChecker {
 
 extension TypeChecker {
     @discardableResult
-    private func checkExpression(_ expr: Expression) -> SlangType {
+    private func checkExpression(_ expr: Expression, expectedType: SlangType? = nil) -> SlangType {
         switch expr.kind {
         case .intLiteral:
             return .int
@@ -606,6 +665,9 @@ extension TypeChecker {
 
         case .boolLiteral:
             return .bool
+
+        case .nilLiteral:
+            return checkNilLiteral(expectedType: expectedType, range: expr.range)
 
         case .stringInterpolation(let parts):
             return checkStringInterpolation(parts: parts)
@@ -625,12 +687,37 @@ extension TypeChecker {
         case .memberAccess(let object, let member):
             return checkMemberAccess(object: object, member: member, range: expr.range)
 
+        case .subscriptAccess(let object, let index):
+            return checkSubscriptAccess(object: object, index: index, range: expr.range)
+
         case .structInit(let typeName, let fields):
             return checkStructInit(typeName: typeName, fields: fields, range: expr.range)
+
+        case .arrayLiteral(let elements):
+            return checkArrayLiteral(elements: elements, expectedType: expectedType, range: expr.range)
+
+        case .dictionaryLiteral(let pairs):
+            return checkDictionaryLiteral(pairs: pairs, expectedType: expectedType, range: expr.range)
 
         case .switchExpr(let subject, let cases):
             return checkSwitchExpr(subject: subject, cases: cases, range: expr.range)
         }
+    }
+
+    private func checkNilLiteral(expectedType: SlangType?, range: SourceRange) -> SlangType {
+        // nil requires an expected optional type from context
+        guard let expected = expectedType else {
+            error("'nil' requires context to determine its type", at: range)
+            return .error
+        }
+
+        // Expected type must be optional
+        guard case .optionalType = expected else {
+            error("'nil' can only be assigned to optional types, not '\(expected)'", at: range)
+            return .error
+        }
+
+        return expected
     }
 
     private func checkStringInterpolation(parts: [StringPart]) -> SlangType {
@@ -664,7 +751,13 @@ extension TypeChecker {
 
     private func checkBinary(left: Expression, op: BinaryOperator, right: Expression, range: SourceRange) -> SlangType {
         let leftType = checkExpression(left)
-        let rightType = checkExpression(right)
+        // For assignment, pass the left type as expected type so nil can be typed correctly
+        let rightType: SlangType
+        if op == .assign {
+            rightType = checkExpression(right, expectedType: leftType)
+        } else {
+            rightType = checkExpression(right)
+        }
 
         if leftType == .error || rightType == .error {
             return .error
@@ -711,7 +804,7 @@ extension TypeChecker {
 
         // Assignment operators
         case .assign:
-            if leftType != rightType {
+            if !isAssignable(from: rightType, to: leftType) {
                 error("Cannot assign '\(rightType)' to '\(leftType)'", at: range)
                 return .error
             }
@@ -755,6 +848,101 @@ extension TypeChecker {
     }
 
     private func checkCall(callee: Expression, arguments: [Expression], range: SourceRange) -> SlangType {
+        // Check for collection method calls: array.append(), set.contains(), etc.
+        if case .memberAccess(let object, let methodName) = callee.kind {
+            let objectType = checkExpression(object)
+
+            // Array methods
+            if case .arrayType(let elementType) = objectType {
+                switch methodName {
+                case "append":
+                    if arguments.count != 1 {
+                        error("append() expects 1 argument, got \(arguments.count)", at: range)
+                        return .error
+                    }
+                    let argType = checkExpression(arguments[0])
+                    if argType != .error && argType != elementType {
+                        error("Cannot append '\(argType)' to array of '\(elementType)'", at: arguments[0].range)
+                    }
+                    return .void
+
+                case "removeAt":
+                    if arguments.count != 1 {
+                        error("removeAt() expects 1 argument, got \(arguments.count)", at: range)
+                        return .error
+                    }
+                    let argType = checkExpression(arguments[0])
+                    if argType != .error && argType != .int {
+                        error("removeAt() expects Int argument, got '\(argType)'", at: arguments[0].range)
+                    }
+                    return .void
+
+                default:
+                    break
+                }
+            }
+
+            // Set methods
+            if case .setType(let elementType) = objectType {
+                switch methodName {
+                case "contains":
+                    if arguments.count != 1 {
+                        error("contains() expects 1 argument, got \(arguments.count)", at: range)
+                        return .error
+                    }
+                    let argType = checkExpression(arguments[0])
+                    if argType != .error && argType != elementType {
+                        error("contains() expects '\(elementType)' argument, got '\(argType)'", at: arguments[0].range)
+                    }
+                    return .bool
+
+                case "insert":
+                    if arguments.count != 1 {
+                        error("insert() expects 1 argument, got \(arguments.count)", at: range)
+                        return .error
+                    }
+                    let argType = checkExpression(arguments[0])
+                    if argType != .error && argType != elementType {
+                        error("insert() expects '\(elementType)' argument, got '\(argType)'", at: arguments[0].range)
+                    }
+                    return .void
+
+                case "remove":
+                    if arguments.count != 1 {
+                        error("remove() expects 1 argument, got \(arguments.count)", at: range)
+                        return .error
+                    }
+                    let argType = checkExpression(arguments[0])
+                    if argType != .error && argType != elementType {
+                        error("remove() expects '\(elementType)' argument, got '\(argType)'", at: arguments[0].range)
+                    }
+                    return .bool
+
+                default:
+                    break
+                }
+            }
+
+            // Dictionary methods
+            if case .dictionaryType(let keyType, _) = objectType {
+                switch methodName {
+                case "removeKey":
+                    if arguments.count != 1 {
+                        error("removeKey() expects 1 argument, got \(arguments.count)", at: range)
+                        return .error
+                    }
+                    let argType = checkExpression(arguments[0])
+                    if argType != .error && argType != keyType {
+                        error("removeKey() expects '\(keyType)' argument, got '\(argType)'", at: arguments[0].range)
+                    }
+                    return .void
+
+                default:
+                    break
+                }
+            }
+        }
+
         let calleeType = checkExpression(callee)
 
         guard case .function(let paramTypes, let returnType) = calleeType else {
@@ -826,8 +1014,203 @@ extension TypeChecker {
             return fieldType
         }
 
+        // Built-in collection properties
+        if case .arrayType = objectType {
+            if member == "count" { return .int }
+            if member == "isEmpty" { return .bool }
+            if member == "first" {
+                if case .arrayType(let elementType) = objectType {
+                    return .optionalType(wrappedType: elementType)
+                }
+            }
+            if member == "last" {
+                if case .arrayType(let elementType) = objectType {
+                    return .optionalType(wrappedType: elementType)
+                }
+            }
+        }
+
+        if case .dictionaryType = objectType {
+            if member == "count" { return .int }
+            if member == "isEmpty" { return .bool }
+            if case .dictionaryType(let keyType, let valueType) = objectType {
+                if member == "keys" { return .arrayType(elementType: keyType) }
+                if member == "values" { return .arrayType(elementType: valueType) }
+            }
+        }
+
+        if case .setType = objectType {
+            if member == "count" { return .int }
+            if member == "isEmpty" { return .bool }
+        }
+
         error("Cannot access member '\(member)' on type '\(objectType)'", at: range)
         return .error
+    }
+
+    private func checkSubscriptAccess(object: Expression, index: Expression, range: SourceRange) -> SlangType {
+        let objectType = checkExpression(object)
+        let indexType = checkExpression(index)
+
+        if objectType == .error || indexType == .error {
+            return .error
+        }
+
+        // Array subscript: [T][Int] -> T
+        if case .arrayType(let elementType) = objectType {
+            if indexType != .int {
+                error("Array subscript index must be Int, got '\(indexType)'", at: index.range)
+                return .error
+            }
+            return elementType
+        }
+
+        // Dictionary subscript: [K: V][K] -> V?
+        if case .dictionaryType(let keyType, let valueType) = objectType {
+            if indexType != keyType {
+                error("Dictionary subscript key must be '\(keyType)', got '\(indexType)'", at: index.range)
+                return .error
+            }
+            return .optionalType(wrappedType: valueType)
+        }
+
+        error("Cannot subscript type '\(objectType)'", at: range)
+        return .error
+    }
+
+    private func checkArrayLiteral(elements: [Expression], expectedType: SlangType?, range: SourceRange) -> SlangType {
+        // Empty array requires explicit type
+        if elements.isEmpty {
+            guard let expected = expectedType else {
+                error("Empty array literal requires explicit type annotation", at: range)
+                return .error
+            }
+            // Handle Set<T> = [] and [T] = []
+            if case .setType = expected {
+                return expected
+            }
+            if case .arrayType = expected {
+                return expected
+            }
+            error("Cannot use empty array literal for type '\(expected)'", at: range)
+            return .error
+        }
+
+        // Determine expected element type from context
+        var expectedElementType: SlangType? = nil
+        if let expected = expectedType {
+            if case .arrayType(let elemType) = expected {
+                expectedElementType = elemType
+            } else if case .setType(let elemType) = expected {
+                expectedElementType = elemType
+            }
+        }
+
+        // Check all elements have the same type
+        var elementType: SlangType? = nil
+        for element in elements {
+            let elemType = checkExpression(element)
+            if elemType == .error { continue }
+
+            if let existing = elementType {
+                if existing != elemType {
+                    error("Array element type mismatch: expected '\(existing)', got '\(elemType)'", at: element.range)
+                }
+            } else {
+                elementType = elemType
+            }
+
+            // Check against expected type
+            if let expected = expectedElementType, elemType != expected {
+                error("Expected element of type '\(expected)', got '\(elemType)'", at: element.range)
+            }
+        }
+
+        guard let finalElementType = elementType ?? expectedElementType else {
+            error("Cannot infer array element type", at: range)
+            return .error
+        }
+
+        // If expected type is Set, return set
+        if let expected = expectedType, case .setType = expected {
+            // Validate element type is primitive for sets
+            if !finalElementType.isPrimitive {
+                error("Set element type must be a primitive type (Int, String, Bool, Float), got '\(finalElementType)'", at: range)
+                return .error
+            }
+            return .setType(elementType: finalElementType)
+        }
+
+        return .arrayType(elementType: finalElementType)
+    }
+
+    private func checkDictionaryLiteral(pairs: [DictionaryPair], expectedType: SlangType?, range: SourceRange) -> SlangType {
+        // Empty dictionary requires explicit type
+        if pairs.isEmpty {
+            guard let expected = expectedType, case .dictionaryType = expected else {
+                error("Empty dictionary literal requires explicit type annotation: [K: V]", at: range)
+                return .error
+            }
+            return expected
+        }
+
+        // Determine expected types from context
+        var expectedKeyType: SlangType? = nil
+        var expectedValueType: SlangType? = nil
+        if let expected = expectedType, case .dictionaryType(let k, let v) = expected {
+            expectedKeyType = k
+            expectedValueType = v
+        }
+
+        // Check all pairs have the same types
+        var keyType: SlangType? = nil
+        var valueType: SlangType? = nil
+
+        for pair in pairs {
+            let pairKeyType = checkExpression(pair.key)
+            let pairValueType = checkExpression(pair.value)
+
+            if pairKeyType == .error || pairValueType == .error { continue }
+
+            // Validate key type is primitive
+            if !pairKeyType.isPrimitive {
+                error("Dictionary key must be a primitive type (Int, String, Bool, Float), got '\(pairKeyType)'", at: pair.key.range)
+            }
+
+            // Check key type consistency
+            if let existing = keyType {
+                if existing != pairKeyType {
+                    error("Dictionary key type mismatch: expected '\(existing)', got '\(pairKeyType)'", at: pair.key.range)
+                }
+            } else {
+                keyType = pairKeyType
+            }
+
+            // Check value type consistency
+            if let existing = valueType {
+                if existing != pairValueType {
+                    error("Dictionary value type mismatch: expected '\(existing)', got '\(pairValueType)'", at: pair.value.range)
+                }
+            } else {
+                valueType = pairValueType
+            }
+
+            // Check against expected types
+            if let expected = expectedKeyType, pairKeyType != expected {
+                error("Expected key of type '\(expected)', got '\(pairKeyType)'", at: pair.key.range)
+            }
+            if let expected = expectedValueType, pairValueType != expected {
+                error("Expected value of type '\(expected)', got '\(pairValueType)'", at: pair.value.range)
+            }
+        }
+
+        guard let finalKeyType = keyType ?? expectedKeyType,
+              let finalValueType = valueType ?? expectedValueType else {
+            error("Cannot infer dictionary types", at: range)
+            return .error
+        }
+
+        return .dictionaryType(keyType: finalKeyType, valueType: finalValueType)
     }
 
     private func checkStructInit(typeName: String, fields: [FieldInit], range: SourceRange) -> SlangType {

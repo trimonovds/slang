@@ -94,11 +94,14 @@ public class Lexer {
         case ")": addToken(.rightParen, start: startLocation)
         case "{": addToken(.leftBrace, start: startLocation)
         case "}": addToken(.rightBrace, start: startLocation)
+        case "[": addToken(.leftBracket, start: startLocation)
+        case "]": addToken(.rightBracket, start: startLocation)
         case ",": addToken(.comma, start: startLocation)
         case ":": addToken(.colon, start: startLocation)
         case ";": addToken(.semicolon, start: startLocation)
         case ".": addToken(.dot, start: startLocation)
         case "%": addToken(.percent, start: startLocation)
+        case "?": addToken(.questionMark, start: startLocation)
 
         // Operators that might be followed by =
         case "+":
@@ -351,8 +354,8 @@ public class Lexer {
         // Add newline after tokens that can end a statement
         switch lastToken.kind {
         case .identifier, .intLiteral, .floatLiteral, .stringLiteral,
-             .keyword(.true), .keyword(.false), .keyword(.return),
-             .rightParen, .rightBrace:
+             .keyword(.true), .keyword(.false), .keyword(.return), .keyword(.nil),
+             .rightParen, .rightBrace, .rightBracket:
             return true
         default:
             return false

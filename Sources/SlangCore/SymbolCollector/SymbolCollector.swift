@@ -295,7 +295,7 @@ public class SymbolCollector {
 
     private func processExpression(_ expr: Expression) {
         switch expr.kind {
-        case .intLiteral, .floatLiteral, .stringLiteral, .boolLiteral:
+        case .intLiteral, .floatLiteral, .stringLiteral, .boolLiteral, .nilLiteral:
             break
 
         case .stringInterpolation(let parts):
@@ -403,37 +403,75 @@ public class SymbolCollector {
                 processExpression(switchCase.pattern)
                 processStatement(switchCase.body)
             }
+
+        case .subscriptAccess(let object, let index):
+            processExpression(object)
+            processExpression(index)
+
+        case .arrayLiteral(let elements):
+            for element in elements {
+                processExpression(element)
+            }
+
+        case .dictionaryLiteral(let pairs):
+            for pair in pairs {
+                processExpression(pair.key)
+                processExpression(pair.value)
+            }
         }
     }
 
     // MARK: - Helpers
 
     private func addTypeReference(_ type: TypeAnnotation) {
-        // Check if it's a user-defined type (not a builtin)
-        if type.asBuiltin == nil {
-            if let def = scope.lookup(type.name) {
-                references.append(SymbolReference(range: type.range, definition: def))
+        switch type.kind {
+        case .simple(let name):
+            // Check if it's a user-defined type (not a builtin)
+            if type.asBuiltin == nil {
+                if let def = scope.lookup(name) {
+                    references.append(SymbolReference(range: type.range, definition: def))
+                }
             }
+        case .optional(let wrapped):
+            addTypeReference(wrapped)
+        case .array(let element):
+            addTypeReference(element)
+        case .dictionary(let key, let value):
+            addTypeReference(key)
+            addTypeReference(value)
+        case .set(let element):
+            addTypeReference(element)
         }
     }
 
     private func resolveType(_ type: TypeAnnotation) -> SlangType {
-        if let builtin = type.asBuiltin {
-            return SlangType.from(builtin: builtin)
-        }
-        // For user-defined types, we check what kind it is
-        if let def = scope.lookup(type.name) {
-            switch def.kind {
-            case .structType:
-                return .structType(name: type.name)
-            case .enumType:
-                return .enumType(name: type.name)
-            case .unionType:
-                return .unionType(name: type.name)
-            default:
-                return .error
+        switch type.kind {
+        case .simple(let name):
+            if let builtin = type.asBuiltin {
+                return SlangType.from(builtin: builtin)
             }
+            // For user-defined types, we check what kind it is
+            if let def = scope.lookup(name) {
+                switch def.kind {
+                case .structType:
+                    return .structType(name: name)
+                case .enumType:
+                    return .enumType(name: name)
+                case .unionType:
+                    return .unionType(name: name)
+                default:
+                    return .error
+                }
+            }
+            return .error
+        case .optional(let wrapped):
+            return .optionalType(wrappedType: resolveType(wrapped))
+        case .array(let element):
+            return .arrayType(elementType: resolveType(element))
+        case .dictionary(let key, let value):
+            return .dictionaryType(keyType: resolveType(key), valueType: resolveType(value))
+        case .set(let element):
+            return .setType(elementType: resolveType(element))
         }
-        return .error
     }
 }

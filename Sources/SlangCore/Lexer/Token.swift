@@ -15,6 +15,7 @@ public enum Keyword: String, CaseIterable, Sendable {
     case `true`
     case `false`
     case `union`
+    case `nil`
 }
 
 /// The type of a token
@@ -61,10 +62,13 @@ public enum TokenKind: Equatable, Sendable {
     case rightParen     // )
     case leftBrace      // {
     case rightBrace     // }
+    case leftBracket    // [
+    case rightBracket   // ]
     case comma          // ,
     case colon          // :
     case semicolon      // ;
     case dot            // .
+    case questionMark   // ?
 
     // MARK: - Special
     case newline        // For optional semicolon handling
@@ -124,10 +128,13 @@ extension TokenKind: CustomStringConvertible {
         case .rightParen: return ")"
         case .leftBrace: return "{"
         case .rightBrace: return "}"
+        case .leftBracket: return "["
+        case .rightBracket: return "]"
         case .comma: return ","
         case .colon: return ":"
         case .semicolon: return ";"
         case .dot: return "."
+        case .questionMark: return "?"
         case .newline: return "newline"
         case .eof: return "eof"
         case .stringInterpolationStart: return "\\("
