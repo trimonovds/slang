@@ -25,6 +25,27 @@ swift run slang parse <file>.slang
 
 # Debug: show tokens
 swift run slang tokenize <file>.slang
+
+# Run LSP server (used by VS Code extension)
+swift run slang-lsp
+```
+
+### VS Code Extension
+
+```bash
+cd editors/vscode
+
+# Install dependencies
+npm install
+
+# Compile TypeScript
+npm run compile
+
+# Run tests
+npm test
+
+# Package extension
+npm run package
 ```
 
 ## Architecture
@@ -61,9 +82,31 @@ Source → Lexer → Parser → TypeChecker → Interpreter
   - `Diagnostic.swift` - Error types with source ranges
   - `DiagnosticPrinter.swift` - Formatted error display
 
+- **SymbolCollector/** - Symbol indexing for LSP features
+  - `SymbolInfo.swift` - Symbol definitions and references with source locations
+  - `SymbolCollector.swift` - AST walker that collects symbol information for go-to-definition and find-references
+
 ### CLI (Sources/slang/)
 
 Uses swift-argument-parser. Commands: `run`, `check`, `parse`, `tokenize`.
+
+### LSP Server (Sources/slang-lsp/)
+
+Language Server Protocol implementation for editor integration:
+- `LSPServer.swift` - Main server handling JSON-RPC messages
+- `LSPTypes.swift` - LSP protocol message types
+- `JSONRPCTransport.swift` - JSON-RPC communication layer
+- `DocumentManager.swift` - Tracks open document state
+- `PositionConverter.swift` - Converts between LSP positions and source offsets
+
+Supports: go-to-definition, find-references, diagnostics on save.
+
+### VS Code Extension (editors/vscode/)
+
+TypeScript extension providing:
+- Syntax highlighting via TextMate grammar (`syntaxes/slang.tmLanguage.json`)
+- LSP client connecting to `slang-lsp`
+- Language configuration for brackets, comments, auto-closing
 
 ### Tests
 

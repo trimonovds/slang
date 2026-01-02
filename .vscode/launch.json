@@ -19,6 +19,26 @@
             "target": "slang",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release slang"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:slang}",
+            "name": "Debug slang-lsp",
+            "target": "slang-lsp",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug slang-lsp"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:slang}",
+            "name": "Release slang-lsp",
+            "target": "slang-lsp",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release slang-lsp"
         }
     ]
 }
