@@ -1,6 +1,6 @@
 # Phase 8: Collection Types
 
-## Status: 🚧 In Progress (v0.2)
+## Status: ✅ Complete (v0.2)
 
 This phase adds collection types to Slang:
 - **Optional**: Nullable types (`T?`, `nil`)
@@ -461,44 +461,48 @@ func main() {
 ## Acceptance Criteria
 
 ### Phase 8.1 - Optional
-- [ ] `T?` type annotation works
-- [ ] `nil` literal works
-- [ ] `T` can be assigned to `T?`
-- [ ] `nil` can be assigned to any `T?`
-- [ ] Type errors for mismatched optional types
+- [x] `T?` type annotation works
+- [x] `nil` literal works
+- [x] `T` can be assigned to `T?`
+- [x] `nil` can be assigned to any `T?`
+- [x] Type errors for mismatched optional types
 
 ### Phase 8.2 - Array
-- [ ] Array literals parse and evaluate correctly
-- [ ] Array subscript read works: `arr[0]`
-- [ ] Array subscript write works: `arr[0] = 5`
-- [ ] Out-of-bounds causes runtime error
-- [ ] Array type annotations work: `[Int]`, `[[String]]`
-- [ ] Empty arrays require explicit type
-- [ ] `.count` and `.isEmpty` work
+- [x] Array literals parse and evaluate correctly
+- [x] Array subscript read works: `arr[0]`
+- [x] Array subscript write works: `arr[0] = 5`
+- [x] Out-of-bounds causes runtime error
+- [x] Array type annotations work: `[Int]`, `[[String]]`
+- [x] Empty arrays require explicit type
+- [x] `.count` and `.isEmpty` work
 
 ### Phase 8.3 - Dictionary
-- [ ] Dictionary literals parse and evaluate
-- [ ] Dictionary subscript returns `Optional<Value>`
-- [ ] Missing key returns `nil`
-- [ ] Dictionary subscript assignment works
-- [ ] Empty dictionary `[:]` works
-- [ ] Key types restricted to primitives
+- [x] Dictionary literals parse and evaluate
+- [x] Dictionary subscript returns `Optional<Value>`
+- [x] Missing key returns `nil`
+- [x] Dictionary subscript assignment works
+- [x] Empty dictionary `[:]` works
+- [x] Key types restricted to primitives
 
 ### Phase 8.4 - Set
-- [ ] Set creation from array literal with deduplication
-- [ ] `.contains()` method works
-- [ ] `.insert()` and `.remove()` work
-- [ ] `.count` and `.isEmpty` work
-- [ ] Element types restricted to primitives
+- [x] Set creation from array literal with deduplication
+- [x] `.contains()` method works
+- [x] `.insert()` and `.remove()` work
+- [x] `.count` and `.isEmpty` work
+- [x] Element types restricted to primitives
 
 ### Phase 8.5 - Methods
-- [ ] `array.append()` works
-- [ ] `array.removeAt()` works
-- [ ] `array.first` and `array.last` return optionals
-- [ ] `dict.keys` and `dict.values` work
-- [ ] `dict.removeKey()` works
+- [x] `array.append()` works
+- [x] `array.removeAt()` works
+- [x] `array.first` and `array.last` return optionals
+- [x] `dict.keys` and `dict.values` work
+- [x] `dict.removeKey()` works
 
 ### General
-- [ ] Type checker catches type mismatches
-- [ ] No type inference anywhere — all types explicit
-- [ ] Comprehensive test coverage
+- [x] Type checker catches type mismatches
+- [x] No type inference anywhere — all types explicit
+- [x] Comprehensive test coverage
+
+### Known Limitations
+- Nested optionals (`Int??`) are not supported
+- Arrays of optionals (`[Int?]`) require all elements to be wrapped explicitly

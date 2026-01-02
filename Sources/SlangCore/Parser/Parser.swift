@@ -223,12 +223,122 @@ extension Parser {
     }
 
     private mutating func parseTypeAnnotation() throws -> TypeAnnotation {
+        let startToken = peek()
+
+        // Check for array or dictionary type: [Type] or [KeyType: ValueType]
+        if check(.leftBracket) {
+            return try parseArrayOrDictionaryType()
+        }
+
+        // Check for Set<Type>
+        if case .identifier(let name) = peek().kind, name == "Set" {
+            return try parseSetType()
+        }
+
+        // Simple type name
         guard case .identifier(let name) = peek().kind else {
             throw error("Expected type name", at: peek())
         }
         let token = advance()
 
-        return TypeAnnotation(name: name, range: token.range)
+        var typeAnnotation = TypeAnnotation(name: name, range: token.range)
+
+        // Check for optional suffix: Type?
+        if check(.questionMark) {
+            let questionToken = advance()
+            typeAnnotation = TypeAnnotation(
+                kind: .optional(wrapped: typeAnnotation),
+                range: startToken.range.extended(to: questionToken.range)
+            )
+        }
+
+        return typeAnnotation
+    }
+
+    private mutating func parseArrayOrDictionaryType() throws -> TypeAnnotation {
+        let startToken = try consume(.leftBracket, message: "Expected '['")
+        skipNewlines()
+
+        // Check for empty dictionary [:] type - not allowed
+        if check(.colon) {
+            throw error("Empty dictionary type requires key and value types: [K: V]", at: peek())
+        }
+
+        // Parse element/key type
+        let firstType = try parseTypeAnnotation()
+        skipNewlines()
+
+        if check(.colon) {
+            // Dictionary type: [KeyType: ValueType]
+            advance() // consume ':'
+            skipNewlines()
+            let valueType = try parseTypeAnnotation()
+            skipNewlines()
+            let endToken = try consume(.rightBracket, message: "Expected ']' after dictionary type")
+
+            var typeAnnotation = TypeAnnotation(
+                kind: .dictionary(key: firstType, value: valueType),
+                range: startToken.range.extended(to: endToken.range)
+            )
+
+            // Check for optional suffix
+            if check(.questionMark) {
+                let questionToken = advance()
+                typeAnnotation = TypeAnnotation(
+                    kind: .optional(wrapped: typeAnnotation),
+                    range: startToken.range.extended(to: questionToken.range)
+                )
+            }
+
+            return typeAnnotation
+        } else {
+            // Array type: [ElementType]
+            let endToken = try consume(.rightBracket, message: "Expected ']' after array type")
+
+            var typeAnnotation = TypeAnnotation(
+                kind: .array(element: firstType),
+                range: startToken.range.extended(to: endToken.range)
+            )
+
+            // Check for optional suffix
+            if check(.questionMark) {
+                let questionToken = advance()
+                typeAnnotation = TypeAnnotation(
+                    kind: .optional(wrapped: typeAnnotation),
+                    range: startToken.range.extended(to: questionToken.range)
+                )
+            }
+
+            return typeAnnotation
+        }
+    }
+
+    private mutating func parseSetType() throws -> TypeAnnotation {
+        let startToken = advance() // consume 'Set'
+
+        try consume(.less, message: "Expected '<' after 'Set'")
+        skipNewlines()
+
+        let elementType = try parseTypeAnnotation()
+        skipNewlines()
+
+        let endToken = try consume(.greater, message: "Expected '>' after Set element type")
+
+        var typeAnnotation = TypeAnnotation(
+            kind: .set(element: elementType),
+            range: startToken.range.extended(to: endToken.range)
+        )
+
+        // Check for optional suffix
+        if check(.questionMark) {
+            let questionToken = advance()
+            typeAnnotation = TypeAnnotation(
+                kind: .optional(wrapped: typeAnnotation),
+                range: startToken.range.extended(to: questionToken.range)
+            )
+        }
+
+        return typeAnnotation
     }
 
     private mutating func parseStructDecl() throws -> Declaration {
@@ -776,6 +886,16 @@ extension Parser {
                     kind: .memberAccess(object: expr, member: name),
                     range: expr.range.extended(to: nameToken.range)
                 )
+            } else if match(.leftBracket) {
+                // Subscript access: array[index] or dict[key]
+                skipNewlines()
+                let index = try parseExpression()
+                skipNewlines()
+                let endToken = try consume(.rightBracket, message: "Expected ']' after subscript index")
+                expr = Expression(
+                    kind: .subscriptAccess(object: expr, index: index),
+                    range: expr.range.extended(to: endToken.range)
+                )
             } else if check(.leftBrace) {
                 // Check if this is a struct initialization: Identifier { ... }
                 if case .identifier(let typeName) = expr.kind {
@@ -877,6 +997,10 @@ extension Parser {
             advance()
             return Expression(kind: .boolLiteral(value: false), range: token.range)
 
+        case .keyword(.nil):
+            advance()
+            return Expression(kind: .nilLiteral, range: token.range)
+
         case .identifier(let name):
             advance()
             return Expression(kind: .identifier(name: name), range: token.range)
@@ -889,11 +1013,94 @@ extension Parser {
             try consume(.rightParen, message: "Expected ')' after expression")
             return expr
 
+        case .leftBracket:
+            return try parseArrayOrDictionaryLiteral()
+
         case .keyword(.switch):
             return try parseSwitchExpr()
 
         default:
             throw error("Expected expression", at: token)
+        }
+    }
+
+    private mutating func parseArrayOrDictionaryLiteral() throws -> Expression {
+        let startToken = try consume(.leftBracket, message: "Expected '['")
+        skipNewlines()
+
+        // Empty collection: []
+        if check(.rightBracket) {
+            let endToken = advance()
+            return Expression(
+                kind: .arrayLiteral(elements: []),
+                range: startToken.range.extended(to: endToken.range)
+            )
+        }
+
+        // Check for empty dictionary: [:]
+        if check(.colon) {
+            advance() // consume ':'
+            skipNewlines()
+            let endToken = try consume(.rightBracket, message: "Expected ']' after '[:'")
+            return Expression(
+                kind: .dictionaryLiteral(pairs: []),
+                range: startToken.range.extended(to: endToken.range)
+            )
+        }
+
+        // Parse first element/key
+        let firstExpr = try parseExpression()
+        skipNewlines()
+
+        // Check if it's a dictionary (key: value) or array
+        if check(.colon) {
+            // Dictionary literal
+            advance() // consume ':'
+            skipNewlines()
+            let firstValue = try parseExpression()
+            skipNewlines()
+
+            var pairs: [DictionaryPair] = [
+                DictionaryPair(key: firstExpr, value: firstValue, range: firstExpr.range.extended(to: firstValue.range))
+            ]
+
+            while match(.comma) {
+                skipNewlines()
+                if check(.rightBracket) { break } // Allow trailing comma
+
+                let key = try parseExpression()
+                skipNewlines()
+                try consume(.colon, message: "Expected ':' after dictionary key")
+                skipNewlines()
+                let value = try parseExpression()
+                skipNewlines()
+
+                pairs.append(DictionaryPair(key: key, value: value, range: key.range.extended(to: value.range)))
+            }
+
+            let endToken = try consume(.rightBracket, message: "Expected ']' after dictionary literal")
+            return Expression(
+                kind: .dictionaryLiteral(pairs: pairs),
+                range: startToken.range.extended(to: endToken.range)
+            )
+        } else {
+            // Array literal
+            var elements: [Expression] = [firstExpr]
+
+            while match(.comma) {
+                skipNewlines()
+                if check(.rightBracket) { break } // Allow trailing comma
+
+                let elem = try parseExpression()
+                elements.append(elem)
+                skipNewlines()
+            }
+
+            let endToken = try consume(.rightBracket, message: "Expected ']' after array literal")
+            return Expression(
+                kind: .arrayLiteral(elements: elements),
+                range: startToken.range.extended(to: endToken.range)
+            )
         }
     }
 

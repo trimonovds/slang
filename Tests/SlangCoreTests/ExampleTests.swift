@@ -127,4 +127,48 @@ struct ExampleTests {
             "Pet 2 name: Whiskers"
         ])
     }
+
+    @Test("collections.slang - v0.2 collection types")
+    func collectionsExample() throws {
+        let output = try runExample("collections.slang")
+        #expect(output == [
+            "=== Optional ===",
+            "name is nil: true",
+            "greeting: some(Hello)",
+            "name after assignment: some(World)",
+            "=== Array ===",
+            "First: 1",
+            "Count: 5",
+            "isEmpty: false",
+            "After update: 10",
+            "After append: 6",
+            "first: some(10)",
+            "last: some(6)",
+            "After removeAt(0): 2",
+            "empty.isEmpty: true",
+            "empty.first is nil: true",
+            "=== Dictionary ===",
+            "ages count: 2",
+            "alice age: some(30)",
+            "unknown age is nil: true",
+            "After adding charlie: 3",
+            "alice updated age: some(31)",
+            "keys count: 3",
+            "values count: 3",
+            "After removing bob: 2",
+            "emptyDict.isEmpty: true",
+            "=== Set ===",
+            "tags count (after dedup): 2",
+            "tags.isEmpty: false",
+            "contains swift: true",
+            "contains rust: false",
+            "After insert rust: 3",
+            "After insert duplicate swift: 3",
+            "Removed slang: true",
+            "After remove: 2",
+            "Removed nonexistent: false",
+            "emptySet.isEmpty: true",
+            "=== Done ==="
+        ])
+    }
 }

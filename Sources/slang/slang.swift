@@ -302,6 +302,16 @@ struct Parse: ParsableCommand {
         case .switchExpr(let subject, let cases):
             let casesStr = cases.map { "\(exprString($0.pattern)) -> ..." }.joined(separator: ", ")
             return "switch (\(exprString(subject))) { \(casesStr) }"
+        case .nilLiteral:
+            return "nil"
+        case .subscriptAccess(let object, let index):
+            return "\(exprString(object))[\(exprString(index))]"
+        case .arrayLiteral(let elements):
+            let elemsStr = elements.map { exprString($0) }.joined(separator: ", ")
+            return "[\(elemsStr)]"
+        case .dictionaryLiteral(let pairs):
+            let pairsStr = pairs.map { "\(exprString($0.key)): \(exprString($0.value))" }.joined(separator: ", ")
+            return "[\(pairsStr)]"
         }
     }
 }

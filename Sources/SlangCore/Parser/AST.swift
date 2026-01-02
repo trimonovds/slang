@@ -92,18 +92,50 @@ public struct UnionVariant: Sendable {
     }
 }
 
+/// Represents a type annotation in the AST
+public indirect enum TypeAnnotationKind: Sendable {
+    case simple(name: String)
+    case optional(wrapped: TypeAnnotation)
+    case array(element: TypeAnnotation)
+    case dictionary(key: TypeAnnotation, value: TypeAnnotation)
+    case set(element: TypeAnnotation)
+}
+
 public struct TypeAnnotation: Sendable {
-    public let name: String
+    public let kind: TypeAnnotationKind
     public let range: SourceRange
 
-    public init(name: String, range: SourceRange) {
-        self.name = name
+    public init(kind: TypeAnnotationKind, range: SourceRange) {
+        self.kind = kind
         self.range = range
+    }
+
+    /// Convenience initializer for simple type names (backward compatibility)
+    public init(name: String, range: SourceRange) {
+        self.kind = .simple(name: name)
+        self.range = range
+    }
+
+    /// Get the simple name if this is a simple type annotation
+    public var name: String {
+        switch kind {
+        case .simple(let name):
+            return name
+        case .optional:
+            return "_optional"
+        case .array:
+            return "_array"
+        case .dictionary:
+            return "_dictionary"
+        case .set:
+            return "_set"
+        }
     }
 
     /// Try to parse as a built-in type
     public var asBuiltin: BuiltinTypeName? {
-        BuiltinTypeName(rawValue: name)
+        guard case .simple(let name) = kind else { return nil }
+        return BuiltinTypeName(rawValue: name)
     }
 }
 
@@ -138,6 +170,19 @@ public enum StringPart: Sendable {
 
 // MARK: - Expressions
 
+/// Key-value pair in a dictionary literal
+public struct DictionaryPair: Sendable {
+    public let key: Expression
+    public let value: Expression
+    public let range: SourceRange
+
+    public init(key: Expression, value: Expression, range: SourceRange) {
+        self.key = key
+        self.value = value
+        self.range = range
+    }
+}
+
 /// The semantic content of an expression (no range - that's in the wrapper)
 public indirect enum ExpressionKind: Sendable {
     // Literals
@@ -145,6 +190,7 @@ public indirect enum ExpressionKind: Sendable {
     case floatLiteral(value: Double)
     case stringLiteral(value: String)
     case boolLiteral(value: Bool)
+    case nilLiteral
 
     // String interpolation
     case stringInterpolation(parts: [StringPart])
@@ -159,9 +205,14 @@ public indirect enum ExpressionKind: Sendable {
     // Access
     case call(callee: Expression, arguments: [Expression])
     case memberAccess(object: Expression, member: String)
+    case subscriptAccess(object: Expression, index: Expression)
 
     // Struct initialization
     case structInit(typeName: String, fields: [FieldInit])
+
+    // Collection literals
+    case arrayLiteral(elements: [Expression])
+    case dictionaryLiteral(pairs: [DictionaryPair])
 
     // Switch expression (returns a value)
     case switchExpr(subject: Expression, cases: [SwitchCase])

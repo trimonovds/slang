@@ -14,6 +14,12 @@ public indirect enum SlangType: Equatable, CustomStringConvertible, Sendable {
     case enumType(name: String)
     case unionType(name: String)
 
+    // Collection types
+    case optionalType(wrappedType: SlangType)
+    case arrayType(elementType: SlangType)
+    case dictionaryType(keyType: SlangType, valueType: SlangType)
+    case setType(elementType: SlangType)
+
     // Function type (for type checking calls)
     case function(params: [SlangType], returnType: SlangType)
 
@@ -30,6 +36,10 @@ public indirect enum SlangType: Equatable, CustomStringConvertible, Sendable {
         case .structType(let name): return name
         case .enumType(let name): return name
         case .unionType(let name): return name
+        case .optionalType(let wrapped): return "\(wrapped)?"
+        case .arrayType(let element): return "[\(element)]"
+        case .dictionaryType(let key, let value): return "[\(key): \(value)]"
+        case .setType(let element): return "Set<\(element)>"
         case .function(let params, let ret):
             let paramStr = params.map { $0.description }.joined(separator: ", ")
             return "(\(paramStr)) -> \(ret)"
@@ -40,6 +50,16 @@ public indirect enum SlangType: Equatable, CustomStringConvertible, Sendable {
     /// Check if this type is numeric (Int or Float)
     public var isNumeric: Bool {
         self == .int || self == .float
+    }
+
+    /// Check if this type is a primitive type (hashable/equatable for set/dictionary keys)
+    public var isPrimitive: Bool {
+        switch self {
+        case .int, .float, .string, .bool:
+            return true
+        default:
+            return false
+        }
     }
 
     /// Convert from BuiltinTypeName to SlangType
