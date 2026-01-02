@@ -4,6 +4,8 @@ This is the master document for implementing the Slang programming language. Eac
 
 ## Progress Tracker
 
+### v0.1 Core Language
+
 | Phase | Status | Spec |
 |-------|--------|------|
 | 1. Lexer | ✅ Complete | [phase-1-lexer.md](phase-1-lexer.md) |
@@ -12,6 +14,25 @@ This is the master document for implementing the Slang programming language. Eac
 | 4. Interpreter | ✅ Complete | [phase-4-interpreter.md](phase-4-interpreter.md) |
 | 5. CLI Polish | ✅ Complete | [phase-5-cli.md](phase-5-cli.md) |
 | 6. Testing | ✅ Complete | [phase-6-testing.md](phase-6-testing.md) |
+
+### v0.1.1+ Language Extensions
+
+| Phase | Status | Spec |
+|-------|--------|------|
+| 7. Unions & Switch Expressions | ✅ Complete | [phase-7-unions.md](phase-7-unions.md) |
+| 8. Collections | 🚧 In Progress | [phase-8-collections.md](phase-8-collections.md) |
+| 9. LSP & IDE Support | ✅ Complete | [phase-9-lsp.md](phase-9-lsp.md) |
+
+### Future Phases
+
+| Phase | Status | Spec |
+|-------|--------|------|
+| 10. Methods | Planned | - |
+| 11. Modules | Planned | - |
+| 12. Generics | Planned | - |
+| 13. Build System | Planned | - |
+| 14. Formatter | Planned | - |
+| 15. LLVM Backend | Planned | - |
 
 ---
 
@@ -31,12 +52,20 @@ This is the master document for implementing the Slang programming language. Eac
 | String interpolation | `\(expr)` |
 | Enum access | Always qualified: `Direction.up` |
 | print() | Only accepts String |
+| Unions | `union Pet = Dog \| Cat` (v0.1.2) |
+| Switch expressions | `var x = switch (val) { ... }` (v0.1.1) |
+| Optional | `T?`, `nil` (v0.2) |
+| Array | `[T]`, subscript `arr[i]` (v0.2) |
+| Dictionary | `[K: V]`, subscript returns `T?` (v0.2) |
+| Set | `Set<T>` with array literal (v0.2) |
 
 ---
 
 ## Dependency Graph
 
 ```
+                    v0.1 Core Language
+                    ==================
 Phase 1: Lexer
     │
     ▼
@@ -53,11 +82,25 @@ Phase 5: CLI Polish
     │
     ▼
 Phase 6: Testing
+    │
+    ├─────────────────────────────────────┐
+    │                                     │
+    ▼                                     ▼
+    v0.1.1+ Extensions              v0.2 Collections
+    ==================              =================
+Phase 7: Unions &                 Phase 8: Collections
+         Switch Expressions       (Optional, Array,
+         (v0.1.1, v0.1.2)          Dictionary, Set)
+    │
+    ▼
+Phase 9: LSP & IDE Support
 ```
 
 **Notes:**
-- Each phase depends on the previous one
-- CLI skeleton can be built in parallel with Phase 2-4
+- Phases 1-6 form the core v0.1 language
+- Phases 7-9 are language extensions (can be done in parallel)
+- Phase 8 depends on core language only
+- Phase 9 depends on Phase 7 for union support in LSP
 - Tests should be written alongside each phase
 
 ---
@@ -83,10 +126,28 @@ slang/
 │   │   │   ├── Value.swift
 │   │   │   ├── Environment.swift
 │   │   │   └── Interpreter.swift
-│   │   └── Diagnostics/
-│   │       └── Diagnostic.swift
-│   └── slang/               # CLI executable
-│       └── slang.swift
+│   │   ├── Diagnostics/
+│   │   │   └── Diagnostic.swift
+│   │   └── SymbolCollector/     # For LSP (Phase 9)
+│   │       ├── SymbolInfo.swift
+│   │       └── SymbolCollector.swift
+│   ├── slang/               # CLI executable
+│   │   └── slang.swift
+│   └── slang-lsp/           # Language Server (Phase 9)
+│       ├── main.swift
+│       ├── LSPServer.swift
+│       ├── LSPTypes.swift
+│       ├── JSONRPCTransport.swift
+│       ├── DocumentManager.swift
+│       └── PositionConverter.swift
+├── editors/
+│   └── vscode/              # VS Code extension (Phase 9)
+│       ├── package.json
+│       ├── language-configuration.json
+│       ├── syntaxes/
+│       │   └── slang.tmLanguage.json
+│       └── src/
+│           └── extension.ts
 └── Tests/
     └── SlangCoreTests/
 ```
@@ -205,3 +266,15 @@ Going up!
 4
 First quadrant
 ```
+
+---
+
+## What's Next?
+
+After completing Phase 6, the v0.1 core language is complete. Continue with:
+
+- [Phase 7: Unions & Switch Expressions](phase-7-unions.md) - Adds union types and switch as expression ✅
+- [Phase 8: Collections](phase-8-collections.md) - Adds Optional, Array, Dictionary, Set 🚧
+- [Phase 9: LSP & IDE Support](phase-9-lsp.md) - VS Code extension with go-to-definition ✅
+
+Future phases (10+) are documented in [roadmap.md](../roadmap.md).

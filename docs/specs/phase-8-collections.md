@@ -1,15 +1,20 @@
-# Implementation Plan: Add Array/Set/Dictionary (Issue #2)
+# Phase 8: Collection Types
 
-This plan outlines the implementation of collection types for the Slang language.
+## Status: 🚧 In Progress (v0.2)
 
-## Overview
+This phase adds collection types to Slang:
+- **Optional**: Nullable types (`T?`, `nil`)
+- **Array**: Ordered, indexed collection (`[T]`)
+- **Dictionary**: Key-value pairs (`[K: V]`)
+- **Set**: Unordered unique elements (`Set<T>`)
 
-Add three collection types to Slang:
-- **Array**: Ordered, indexed collection of homogeneous elements
-- **Set**: Unordered collection of unique elements
-- **Dictionary**: Key-value pairs with homogeneous keys and values
+---
 
-Plus **Optional type** as a prerequisite for safe dictionary access.
+## Prerequisites
+
+- Phase 1-6 complete (v0.1 core language)
+
+---
 
 ## Design Decisions
 
@@ -23,9 +28,15 @@ Plus **Optional type** as a prerequisite for safe dictionary access.
 | Array out-of-bounds | **Runtime error** (programmer error) |
 | Dictionary missing key | **Optional** — returns `T?` |
 
+---
+
 ## Proposed Syntax
 
 ```slang
+// Optional
+var name: String? = nil
+var value: String? = "hello"
+
 // Array
 var numbers: [Int] = [1, 2, 3, 4, 5]
 var first: Int = numbers[0]
@@ -39,21 +50,30 @@ var hasTag: Bool = tags.contains("swift")
 var ages: [String: Int] = ["alice": 30, "bob": 25]
 var maybeAge: Int? = ages["alice"]
 ages["charlie"] = 35
-
-// Optional
-var name: String? = nil
-var value: String? = "hello"
 ```
-
-## Implementation Phases
 
 ---
 
-## Phase 1: Optional Type (Prerequisite)
+## Implementation Phases
 
-Optional is needed for safe dictionary access and will be useful for other features.
+### Phase 8.1: Optional Type
 
-### Step 1.1: Add Type Representation
+Optional is needed for safe dictionary access.
+
+#### Step 8.1.1: Add Tokens
+
+**File**: `Sources/SlangCore/Lexer/Token.swift`
+
+```swift
+case `nil`           // nil keyword
+case questionMark    // ? for optional type syntax
+```
+
+**File**: `Sources/SlangCore/Lexer/Lexer.swift`
+
+Add scanning for `?` and `nil` keyword.
+
+#### Step 8.1.2: Add Type Representation
 
 **File**: `Sources/SlangCore/TypeChecker/Type.swift`
 
@@ -63,7 +83,7 @@ case optionalType(wrappedType: SlangType)
 
 Description: `"\(wrappedType)?"` format.
 
-### Step 1.2: Add Runtime Value
+#### Step 8.1.3: Add Runtime Values
 
 **File**: `Sources/SlangCore/Interpreter/Value.swift`
 
@@ -72,25 +92,15 @@ case some(Value)
 case none
 ```
 
-### Step 1.3: Add AST Nodes
+#### Step 8.1.4: Add AST Nodes
 
 **File**: `Sources/SlangCore/Parser/AST.swift`
 
-Add to `ExpressionKind`:
 ```swift
 case nilLiteral
 ```
 
-### Step 1.4: Add Token
-
-**File**: `Sources/SlangCore/Lexer/Token.swift`
-
-```swift
-case `nil`           // nil keyword
-case questionMark    // ? for optional type syntax
-```
-
-### Step 1.5: Parser Changes
+#### Step 8.1.5: Parser Changes
 
 **File**: `Sources/SlangCore/Parser/Parser.swift`
 
@@ -99,7 +109,7 @@ case questionMark    // ? for optional type syntax
    - After parsing base type, check for `?` suffix
    - Return optional type annotation
 
-### Step 1.6: Type Checker Changes
+#### Step 8.1.6: Type Checker Changes
 
 **File**: `Sources/SlangCore/TypeChecker/TypeChecker.swift`
 
@@ -107,14 +117,14 @@ case questionMark    // ? for optional type syntax
 2. **Check nil literal**: Requires context to determine wrapped type
 3. **Assignment compatibility**: `T` can be assigned to `T?`, `nil` can be assigned to any `T?`
 
-### Step 1.7: Interpreter Changes
+#### Step 8.1.7: Interpreter Changes
 
 **File**: `Sources/SlangCore/Interpreter/Interpreter.swift`
 
 1. **Evaluate nil**: Return `.none`
 2. **Wrap values**: When assigning `T` to `T?`, wrap in `.some()`
 
-### Step 1.8: Tests
+#### Step 8.1.8: Tests
 
 **File**: `Tests/SlangCoreTests/OptionalTests.swift`
 
@@ -126,11 +136,11 @@ case questionMark    // ? for optional type syntax
 
 ---
 
-## Phase 2: Array Type
+### Phase 8.2: Array Type
 
 Arrays are the foundation for other collection types.
 
-### Step 2.1: Add Tokens (Lexer)
+#### Step 8.2.1: Add Tokens
 
 **File**: `Sources/SlangCore/Lexer/Token.swift`
 
@@ -143,7 +153,7 @@ case rightBracket    // ]
 
 Add scanning for `[` and `]` characters.
 
-### Step 2.2: Add Type Representation
+#### Step 8.2.2: Add Type Representation
 
 **File**: `Sources/SlangCore/TypeChecker/Type.swift`
 
@@ -153,7 +163,7 @@ case arrayType(elementType: SlangType)
 
 Description: `"[\(elementType)]"` format.
 
-### Step 2.3: Add Runtime Value
+#### Step 8.2.3: Add Runtime Value
 
 **File**: `Sources/SlangCore/Interpreter/Value.swift`
 
@@ -163,7 +173,7 @@ case arrayInstance(elements: [Value])
 
 Format as `[elem1, elem2, ...]` in description.
 
-### Step 2.4: Add AST Nodes
+#### Step 8.2.4: Add AST Nodes
 
 **File**: `Sources/SlangCore/Parser/AST.swift`
 
@@ -172,7 +182,7 @@ case arrayLiteral(elements: [Expression])
 case subscriptAccess(object: Expression, index: Expression)
 ```
 
-### Step 2.5: Parser Changes
+#### Step 8.2.5: Parser Changes
 
 **File**: `Sources/SlangCore/Parser/Parser.swift`
 
@@ -188,7 +198,7 @@ case subscriptAccess(object: Expression, index: Expression)
 3. **Parse array type annotations** in `parseTypeAnnotation()`:
    - `[Type]` → array of Type
 
-### Step 2.6: Type Checker Changes
+#### Step 8.2.6: Type Checker Changes
 
 **File**: `Sources/SlangCore/TypeChecker/TypeChecker.swift`
 
@@ -207,7 +217,7 @@ case subscriptAccess(object: Expression, index: Expression)
    - `array.count` → `Int`
    - `array.isEmpty` → `Bool`
 
-### Step 2.7: Interpreter Changes
+#### Step 8.2.7: Interpreter Changes
 
 **File**: `Sources/SlangCore/Interpreter/Interpreter.swift`
 
@@ -227,7 +237,7 @@ case subscriptAccess(object: Expression, index: Expression)
    - `.count` → array length
    - `.isEmpty` → count == 0
 
-### Step 2.8: Tests
+#### Step 8.2.8: Tests
 
 **File**: `Tests/SlangCoreTests/ArrayTests.swift`
 
@@ -243,9 +253,9 @@ case subscriptAccess(object: Expression, index: Expression)
 
 ---
 
-## Phase 3: Dictionary Type
+### Phase 8.3: Dictionary Type
 
-### Step 3.1: Add Type Representation
+#### Step 8.3.1: Add Type Representation
 
 **File**: `Sources/SlangCore/TypeChecker/Type.swift`
 
@@ -255,7 +265,7 @@ case dictionaryType(keyType: SlangType, valueType: SlangType)
 
 Description: `"[\(keyType): \(valueType)]"`
 
-### Step 3.2: Add Runtime Value
+#### Step 8.3.2: Add Runtime Value
 
 **File**: `Sources/SlangCore/Interpreter/Value.swift`
 
@@ -265,7 +275,7 @@ case dictionaryInstance(pairs: [(key: Value, value: Value)])
 
 Note: Array of tuples for simplicity (no Hashable requirement on Value).
 
-### Step 3.3: Add AST Nodes
+#### Step 8.3.3: Add AST Nodes
 
 **File**: `Sources/SlangCore/Parser/AST.swift`
 
@@ -273,7 +283,7 @@ Note: Array of tuples for simplicity (no Hashable requirement on Value).
 case dictionaryLiteral(pairs: [(key: Expression, value: Expression)])
 ```
 
-### Step 3.4: Parser Changes
+#### Step 8.3.4: Parser Changes
 
 1. **Disambiguate `[` token**:
    - Parse first expression
@@ -283,14 +293,14 @@ case dictionaryLiteral(pairs: [(key: Expression, value: Expression)])
 
 2. **Parse dictionary type**: `[KeyType: ValueType]`
 
-### Step 3.5: Type Checker Changes
+#### Step 8.3.5: Type Checker Changes
 
 1. **Validate key types**: Only primitives (Int, String, Bool) allowed as keys
 2. **Check homogeneity**: All keys same type, all values same type
 3. **Subscript access**: Returns `Optional<ValueType>` (may be missing)
 4. **Subscript assignment**: Adds or updates key-value pair
 
-### Step 3.6: Interpreter Changes
+#### Step 8.3.6: Interpreter Changes
 
 1. **Evaluate dictionary literals**
 2. **Subscript read**:
@@ -298,7 +308,7 @@ case dictionaryLiteral(pairs: [(key: Expression, value: Expression)])
    - Return `.some(value)` if found, `.none` if not
 3. **Subscript write**: Update existing or append new pair
 
-### Step 3.7: Tests
+#### Step 8.3.7: Tests
 
 **File**: `Tests/SlangCoreTests/DictionaryTests.swift`
 
@@ -312,9 +322,9 @@ case dictionaryLiteral(pairs: [(key: Expression, value: Expression)])
 
 ---
 
-## Phase 4: Set Type
+### Phase 8.4: Set Type
 
-### Step 4.1: Add Type Representation
+#### Step 8.4.1: Add Type Representation
 
 **File**: `Sources/SlangCore/TypeChecker/Type.swift`
 
@@ -324,7 +334,7 @@ case setType(elementType: SlangType)
 
 Description: `"Set<\(elementType)>"`
 
-### Step 4.2: Add Runtime Value
+#### Step 8.4.2: Add Runtime Value
 
 **File**: `Sources/SlangCore/Interpreter/Value.swift`
 
@@ -334,9 +344,10 @@ case setInstance(elements: [Value])
 
 Uniqueness enforced at insertion time.
 
-### Step 4.3: Syntax
+#### Step 8.4.3: Syntax
 
 Sets use array literal syntax with `Set<T>` type annotation:
+
 ```slang
 var s: Set<Int> = [1, 2, 3]
 var empty: Set<String> = []
@@ -344,12 +355,12 @@ var empty: Set<String> = []
 
 The type annotation disambiguates from array.
 
-### Step 4.4: Parser Changes
+#### Step 8.4.4: Parser Changes
 
 No new literal syntax needed — reuse array literal `[...]`.
 Parser doesn't distinguish; type checker handles based on annotation.
 
-### Step 4.5: Type Checker Changes
+#### Step 8.4.5: Type Checker Changes
 
 1. **Check set literal**: Array literal assigned to `Set<T>` type
 2. **Element type constraints**: Only primitives (hashable/equatable)
@@ -360,14 +371,14 @@ Parser doesn't distinguish; type checker handles based on annotation.
    - `set.insert(element)` → mutating, returns `Void`
    - `set.remove(element)` → mutating, returns `Bool`
 
-### Step 4.6: Interpreter Changes
+#### Step 8.4.6: Interpreter Changes
 
 1. **Create set from array literal**: Deduplicate elements
 2. **contains()**: Linear search, return Bool
 3. **insert()**: Add if not present
 4. **remove()**: Remove if present, return success
 
-### Step 4.7: Tests
+#### Step 8.4.7: Tests
 
 **File**: `Tests/SlangCoreTests/SetTests.swift`
 
@@ -380,16 +391,16 @@ Parser doesn't distinguish; type checker handles based on annotation.
 
 ---
 
-## Phase 5: Collection Methods (Enhancement)
+### Phase 8.5: Collection Methods (Enhancement)
 
-### Step 5.1: Array Methods
+#### Array Methods
 
 - `array.append(element)` → mutating
 - `array.removeAt(index: Int)` → mutating, runtime error if invalid
 - `array.first` → `T?` (Optional)
 - `array.last` → `T?` (Optional)
 
-### Step 5.2: Dictionary Methods
+#### Dictionary Methods
 
 - `dict.keys` → `[KeyType]`
 - `dict.values` → `[ValueType]`
@@ -413,33 +424,81 @@ Parser doesn't distinguish; type checker handles based on annotation.
 | New: `ArrayTests.swift` | Array tests |
 | New: `DictionaryTests.swift` | Dictionary tests |
 | New: `SetTests.swift` | Set tests |
-| `Examples/` | Example `.slang` files |
 
 ---
 
-## Implementation Order
+## Example Program
 
-1. **Phase 1 (Optional)**: Foundation for safe dictionary access
-2. **Phase 2 (Array)**: Core collection, establishes patterns
-3. **Phase 3 (Dictionary)**: Builds on array + optional
-4. **Phase 4 (Set)**: Reuses array literal syntax
-5. **Phase 5 (Methods)**: Enhancement, can be separate PR
+```slang
+func main() {
+    // Optional
+    var name: String? = nil
+    var greeting: String? = "Hello"
+
+    // Array
+    var numbers: [Int] = [1, 2, 3, 4, 5]
+    print("First: \(numbers[0])")
+    print("Count: \(numbers.count)")
+    numbers[0] = 10
+    print("Updated first: \(numbers[0])")
+
+    // Dictionary
+    var ages: [String: Int] = ["alice": 30, "bob": 25]
+    var aliceAge: Int? = ages["alice"]
+    var unknownAge: Int? = ages["charlie"]
+    ages["charlie"] = 35
+
+    // Set
+    var tags: Set<String> = ["swift", "slang", "swift"]  // deduplicates
+    print("Tag count: \(tags.count)")  // 2
+    var hasSwift: Bool = tags.contains("swift")
+    print("Has swift: \(hasSwift)")
+}
+```
 
 ---
 
-## Success Criteria
+## Acceptance Criteria
 
-- [ ] Optional type works (`T?`, `nil`, assignment)
+### Phase 8.1 - Optional
+- [ ] `T?` type annotation works
+- [ ] `nil` literal works
+- [ ] `T` can be assigned to `T?`
+- [ ] `nil` can be assigned to any `T?`
+- [ ] Type errors for mismatched optional types
+
+### Phase 8.2 - Array
 - [ ] Array literals parse and evaluate correctly
-- [ ] Array subscript read/write works with runtime bounds check
-- [ ] Array type annotations work (`[Int]`, `[[String]]`)
+- [ ] Array subscript read works: `arr[0]`
+- [ ] Array subscript write works: `arr[0] = 5`
+- [ ] Out-of-bounds causes runtime error
+- [ ] Array type annotations work: `[Int]`, `[[String]]`
+- [ ] Empty arrays require explicit type
+- [ ] `.count` and `.isEmpty` work
+
+### Phase 8.3 - Dictionary
 - [ ] Dictionary literals parse and evaluate
 - [ ] Dictionary subscript returns `Optional<Value>`
+- [ ] Missing key returns `nil`
 - [ ] Dictionary subscript assignment works
+- [ ] Empty dictionary `[:]` works
+- [ ] Key types restricted to primitives
+
+### Phase 8.4 - Set
 - [ ] Set creation from array literal with deduplication
-- [ ] Set `.contains()`, `.insert()`, `.remove()` work
-- [ ] All collections have `.count` and `.isEmpty`
+- [ ] `.contains()` method works
+- [ ] `.insert()` and `.remove()` work
+- [ ] `.count` and `.isEmpty` work
+- [ ] Element types restricted to primitives
+
+### Phase 8.5 - Methods
+- [ ] `array.append()` works
+- [ ] `array.removeAt()` works
+- [ ] `array.first` and `array.last` return optionals
+- [ ] `dict.keys` and `dict.values` work
+- [ ] `dict.removeKey()` works
+
+### General
 - [ ] Type checker catches type mismatches
 - [ ] No type inference anywhere — all types explicit
 - [ ] Comprehensive test coverage
-- [ ] Example programs in `Tests/Examples/`
