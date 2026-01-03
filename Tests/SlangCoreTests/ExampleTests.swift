@@ -189,4 +189,37 @@ struct ExampleTests {
             "=== Done ==="
         ])
     }
+
+    @Test("game_of_life.slang - nested arrays and complex control flow")
+    func gameOfLifeExample() throws {
+        let output = try runExample("game_of_life.slang")
+        #expect(output == [
+            "=== Game of Life ===",
+            "Initial state:",
+            ".....",
+            "..#..",
+            "..#..",
+            "..#..",
+            ".....",
+            "Generation 1:",
+            ".....",
+            ".....",
+            ".###.",
+            ".....",
+            ".....",
+            "Generation 2:",
+            ".....",
+            "..#..",
+            "..#..",
+            "..#..",
+            ".....",
+            "Generation 3:",
+            ".....",
+            ".....",
+            ".###.",
+            ".....",
+            ".....",
+            "=== Done ==="
+        ])
+    }
 }

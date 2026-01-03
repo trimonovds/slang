@@ -23,6 +23,7 @@ public final class RuntimeEnvironment: @unchecked Sendable {
     }
 
     /// Assign to an existing variable
+    @discardableResult
     public func assign(_ name: String, value: Value) -> Bool {
         if values[name] != nil {
             values[name] = value
