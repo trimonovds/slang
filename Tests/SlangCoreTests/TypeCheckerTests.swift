@@ -553,7 +553,7 @@ struct TypeCheckerTests {
             }
         }
         """
-        expectTypeError(source, containing: "Switch expression subject must be an enum or union type")
+        expectTypeError(source, containing: "Switch expression subject must be an enum, union, or optional type")
     }
 
     // MARK: - Union Tests (v0.1.2)

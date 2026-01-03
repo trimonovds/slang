@@ -642,8 +642,67 @@ extension TypeChecker {
                 error("Switch must be exhaustive. Missing variants: \(missing)", at: range)
             }
         }
+        // For optional types, check exhaustiveness with some/none patterns
+        else if case .optionalType(let wrappedType) = subjectType {
+            // Extract subject variable name for type narrowing (if subject is a simple identifier)
+            var subjectVarName: String? = nil
+            if case .identifier(let name) = subject.kind {
+                subjectVarName = name
+            }
+
+            var hasSome = false
+            var hasNone = false
+
+            for switchCase in cases {
+                // Pattern should be 'some' or 'none' (simple identifiers)
+                var boundVariableType: SlangType? = nil
+
+                if case .identifier(let patternName) = switchCase.pattern.kind {
+                    switch patternName {
+                    case "some":
+                        if hasSome {
+                            error("Duplicate case 'some' in switch", at: switchCase.pattern.range)
+                        }
+                        hasSome = true
+                        boundVariableType = wrappedType  // Narrow to the wrapped type
+                    case "none":
+                        if hasNone {
+                            error("Duplicate case 'none' in switch", at: switchCase.pattern.range)
+                        }
+                        hasNone = true
+                        // No type narrowing for none - variable stays optional but we know it's nil
+                    default:
+                        error("Invalid switch pattern for optional. Expected 'some' or 'none', got '\(patternName)'", at: switchCase.pattern.range)
+                    }
+                } else {
+                    error("Invalid switch pattern for optional. Expected 'some' or 'none'", at: switchCase.pattern.range)
+                }
+
+                // Check the body with narrowed subject variable in scope
+                let caseEnv = environment.createChild()
+                let savedEnv = environment
+                environment = caseEnv
+
+                // Shadow the subject variable with the narrowed type (only for 'some')
+                if let varName = subjectVarName, let varType = boundVariableType {
+                    environment.defineVariable(varName, type: varType)
+                }
+
+                checkStatement(switchCase.body)
+                environment = savedEnv
+            }
+
+            // Check exhaustiveness
+            var missingCases: [String] = []
+            if !hasSome { missingCases.append("some") }
+            if !hasNone { missingCases.append("none") }
+            if !missingCases.isEmpty {
+                let missing = missingCases.joined(separator: ", ")
+                error("Switch must be exhaustive. Missing cases: \(missing)", at: range)
+            }
+        }
         else if subjectType != .error {
-            error("Switch subject must be an enum or union type, got '\(subjectType)'", at: subject.range)
+            error("Switch subject must be an enum, union, or optional type, got '\(subjectType)'", at: subject.range)
         }
     }
 }
@@ -750,12 +809,31 @@ extension TypeChecker {
     }
 
     private func checkBinary(left: Expression, op: BinaryOperator, right: Expression, range: SourceRange) -> SlangType {
-        let leftType = checkExpression(left)
-        // For assignment, pass the left type as expected type so nil can be typed correctly
+        // For equality/assignment with nil, we need to pass type context
+        // Check if either side is nil literal to determine evaluation order
+        let leftIsNil: Bool
+        let rightIsNil: Bool
+        if case .nilLiteral = left.kind { leftIsNil = true } else { leftIsNil = false }
+        if case .nilLiteral = right.kind { rightIsNil = true } else { rightIsNil = false }
+
+        let leftType: SlangType
         let rightType: SlangType
-        if op == .assign {
-            rightType = checkExpression(right, expectedType: leftType)
+
+        if op == .assign || op == .equal || op == .notEqual {
+            if rightIsNil {
+                // Evaluate left first, pass its type to right (nil)
+                leftType = checkExpression(left)
+                rightType = checkExpression(right, expectedType: leftType)
+            } else if leftIsNil {
+                // Evaluate right first, pass its type to left (nil)
+                rightType = checkExpression(right)
+                leftType = checkExpression(left, expectedType: rightType)
+            } else {
+                leftType = checkExpression(left)
+                rightType = checkExpression(right, expectedType: leftType)
+            }
         } else {
+            leftType = checkExpression(left)
             rightType = checkExpression(right)
         }
 
@@ -1364,9 +1442,71 @@ extension TypeChecker {
                 environment = savedEnv
             }
         }
+        else if case .optionalType(let wrappedType) = subjectType {
+            allCaseNames = Set(["some", "none"])
+            typeLabel = "optional '\(subjectType)'"
+
+            // Extract subject variable name for type narrowing (if subject is a simple identifier)
+            var subjectVarName: String? = nil
+            if case .identifier(let name) = subject.kind {
+                subjectVarName = name
+            }
+
+            for switchCase in cases {
+                // Validate pattern: should be 'some' or 'none' identifier
+                var boundVariableType: SlangType? = nil
+
+                if case .identifier(let patternName) = switchCase.pattern.kind {
+                    switch patternName {
+                    case "some":
+                        if coveredCases.contains("some") {
+                            error("Duplicate case 'some' in switch expression", at: switchCase.pattern.range)
+                        }
+                        coveredCases.insert("some")
+                        boundVariableType = wrappedType  // Narrow to the wrapped type
+                    case "none":
+                        if coveredCases.contains("none") {
+                            error("Duplicate case 'none' in switch expression", at: switchCase.pattern.range)
+                        }
+                        coveredCases.insert("none")
+                        // No type narrowing for none
+                    default:
+                        error("Invalid switch pattern for optional. Expected 'some' or 'none', got '\(patternName)'", at: switchCase.pattern.range)
+                    }
+                } else {
+                    error("Invalid switch pattern for optional. Expected 'some' or 'none'", at: switchCase.pattern.range)
+                }
+
+                // Get the return type from the case body with narrowed subject variable in scope
+                let caseEnv = environment.createChild()
+                let savedEnv = environment
+                environment = caseEnv
+
+                // Shadow the subject variable with the narrowed type (only for 'some')
+                if let varName = subjectVarName, let varType = boundVariableType {
+                    environment.defineVariable(varName, type: varType)
+                }
+
+                let caseReturnType = getReturnTypeFromStatement(switchCase.body)
+
+                if caseReturnType == nil {
+                    error("Switch expression case must return a value", at: switchCase.body.range)
+                } else if let caseType = caseReturnType, caseType != .error {
+                    if let existingType = resultType {
+                        if existingType != caseType && existingType != .error {
+                            error("Switch expression cases must all return the same type. Expected '\(existingType)', got '\(caseType)'", at: switchCase.body.range)
+                        }
+                    } else {
+                        resultType = caseType
+                    }
+                }
+
+                environment = savedEnv
+            }
+        }
         else {
             if subjectType != .error {
-                error("Switch expression subject must be an enum or union type, got '\(subjectType)'", at: subject.range)
+                error("Switch expression subject must be an enum, union, or optional type, got '\(subjectType)'", at: subject.range)
             }
             return .error
         }

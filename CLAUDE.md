@@ -70,11 +70,11 @@ Source → Lexer → Parser → TypeChecker → Interpreter
   - `Parser.swift` - Builds AST from tokens
 
 - **TypeChecker/** - Static type verification before execution
-  - `Type.swift` - `SlangType` enum (int, float, string, bool, void, structType, enumType, unionType, function, error)
+  - `Type.swift` - `SlangType` enum (int, float, string, bool, void, structType, enumType, unionType, optionalType, arrayType, dictionaryType, setType, function, error)
   - `TypeChecker.swift` - Scoped symbol table, type inference, exhaustiveness checking for switch
 
 - **Interpreter/** - Tree-walking execution
-  - `Value.swift` - Runtime values (int, float, string, bool, structInstance, enumCase, unionInstance)
+  - `Value.swift` - Runtime values (int, float, string, bool, structInstance, enumCase, unionInstance, some, none, arrayInstance, dictionaryInstance, setInstance)
   - `Environment.swift` - Variable scopes with parent chain
   - `Interpreter.swift` - Statement/expression evaluation, finds and runs `main()`
 
@@ -166,6 +166,51 @@ TypeScript extension providing:
   }
   ```
 - Union switch expressions return values just like enum switch expressions
+
+## Language Features (v0.2)
+
+- **Optional types**: Nullable types with `T?` syntax
+  ```slang
+  var name: String? = nil
+  var value: Int? = 42
+  ```
+- **Nil comparison**: Check for nil with `== nil` and `!= nil`
+  ```slang
+  var isNil: Bool = name == nil
+  var hasValue: Bool = value != nil
+  ```
+- **Switch on optionals**: Use `some`/`none` patterns with exhaustiveness checking
+  ```slang
+  switch (name) {
+      some -> print("value: \(name)")  // name narrowed to String
+      none -> print("nil")
+  }
+  ```
+- **Switch expressions on optionals**: Return values from optional switches
+  ```slang
+  var length: Int = switch (name) {
+      some -> return 5
+      none -> return 0
+  }
+  ```
+- **Arrays**: Ordered, indexed collections with `[T]` syntax
+  ```slang
+  var numbers: [Int] = [1, 2, 3]
+  var first: Int = numbers[0]
+  numbers.append(4)
+  ```
+- **Dictionaries**: Key-value pairs with `[K: V]` syntax, subscript returns optional
+  ```slang
+  var ages: [String: Int] = ["alice": 30]
+  var age: Int? = ages["alice"]
+  ages["bob"] = 25
+  ```
+- **Sets**: Unordered unique elements with `Set<T>` syntax
+  ```slang
+  var tags: Set<String> = ["a", "b", "a"]  // deduplicates to 2 elements
+  var has: Bool = tags.contains("a")
+  tags.insert("c")
+  ```
 
 ## Key Patterns
 
