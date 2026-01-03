@@ -5,12 +5,27 @@ func main() {
     print("=== Optional ===")
     var name: String? = nil
     var greeting: String? = "Hello"
-    print("name is nil: true")
-    print("greeting: some(Hello)")
+
+    // Nil comparison
+    print("name == nil: \(name == nil)")
+    print("greeting != nil: \(greeting != nil)")
 
     // Assign value to optional
     name = "World"
-    print("name after assignment: some(World)")
+    print("name after assignment: \(name)")
+
+    // Switch on optional with type narrowing
+    switch (name) {
+        some -> print("name has value: \(name)")
+        none -> print("name is nil")
+    }
+
+    // Switch expression on optional
+    var nameLength: Int = switch (name) {
+        some -> return 5
+        none -> return 0
+    }
+    print("name length: \(nameLength)")
 
     // === Array ===
     print("=== Array ===")
@@ -41,7 +56,7 @@ func main() {
     var empty: [Int] = []
     print("empty.isEmpty: \(empty.isEmpty)")
     var emptyFirst: Int? = empty.first
-    print("empty.first is nil: true")
+    print("empty.first == nil: \(emptyFirst == nil)")
 
     // === Dictionary ===
     print("=== Dictionary ===")
@@ -53,7 +68,7 @@ func main() {
     print("alice age: \(aliceAge)")
 
     var unknownAge: Int? = ages["unknown"]
-    print("unknown age is nil: true")
+    print("unknown age == nil: \(unknownAge == nil)")
 
     // Dictionary subscript assignment
     ages["charlie"] = 35

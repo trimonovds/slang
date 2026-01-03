@@ -1475,6 +1475,604 @@ struct VariableNameRangeTests {
     }
 }
 
+// MARK: - Collection Type LSP Tests
+
+@Suite("LSP Collection Type Reference Tests")
+struct CollectionTypeReferenceTests {
+
+    private func collectSymbols(from source: String) throws -> FileSymbols {
+        let lexer = Lexer(source: source, filename: "test.slang")
+        let tokens = try lexer.tokenize()
+        var parser = Parser(tokens: tokens)
+        let declarations = try parser.parse()
+        let collector = SymbolCollector()
+        return collector.collect(declarations: declarations, file: "test.slang")
+    }
+
+    // MARK: - Optional Type References
+
+    @Test("Optional type annotation creates reference to wrapped type")
+    func optionalTypeAnnotationCreatesReference() throws {
+        let source = """
+        struct Person {
+            name: String
+        }
+
+        func main() {
+            var maybePerson: Person? = nil
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        // Should have a reference to Person from the optional type annotation
+        let personRefs = symbols.references.filter { $0.definition.name == "Person" }
+        #expect(!personRefs.isEmpty, "Should have reference to Person from Person? annotation")
+    }
+
+    @Test("Optional parameter type creates reference")
+    func optionalParameterTypeCreatesReference() throws {
+        let source = """
+        struct Dog {
+            name: String
+        }
+
+        func petDog(dog: Dog?) {
+            print("maybe a dog")
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let dogRefs = symbols.references.filter { $0.definition.name == "Dog" }
+        #expect(!dogRefs.isEmpty, "Should have reference to Dog from Dog? parameter type")
+    }
+
+    @Test("Optional return type creates reference")
+    func optionalReturnTypeCreatesReference() throws {
+        let source = """
+        struct Cat {
+            name: String
+        }
+
+        func findCat() -> Cat? {
+            return nil
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let catRefs = symbols.references.filter { $0.definition.name == "Cat" }
+        #expect(!catRefs.isEmpty, "Should have reference to Cat from Cat? return type")
+    }
+
+    @Test("Optional field type creates reference")
+    func optionalFieldTypeCreatesReference() throws {
+        let source = """
+        struct Address {
+            street: String
+        }
+
+        struct Person {
+            name: String
+            address: Address?
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let addressRefs = symbols.references.filter { $0.definition.name == "Address" }
+        #expect(!addressRefs.isEmpty, "Should have reference to Address from Address? field type")
+    }
+
+    // MARK: - Array Type References
+
+    @Test("Array type annotation creates reference to element type")
+    func arrayTypeAnnotationCreatesReference() throws {
+        let source = """
+        struct Point {
+            x: Int
+            y: Int
+        }
+
+        func main() {
+            var points: [Point] = []
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let pointRefs = symbols.references.filter { $0.definition.name == "Point" }
+        #expect(!pointRefs.isEmpty, "Should have reference to Point from [Point] annotation")
+    }
+
+    @Test("Array parameter type creates reference")
+    func arrayParameterTypeCreatesReference() throws {
+        let source = """
+        struct Item {
+            id: Int
+        }
+
+        func processItems(items: [Item]) {
+            print("processing")
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let itemRefs = symbols.references.filter { $0.definition.name == "Item" }
+        #expect(!itemRefs.isEmpty, "Should have reference to Item from [Item] parameter type")
+    }
+
+    @Test("Array return type creates reference")
+    func arrayReturnTypeCreatesReference() throws {
+        let source = """
+        struct Task {
+            name: String
+        }
+
+        func getTasks() -> [Task] {
+            var result: [Task] = []
+            return result
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let taskRefs = symbols.references.filter { $0.definition.name == "Task" }
+        // Should have references from return type and variable declaration
+        #expect(taskRefs.count >= 2, "Should have references to Task from [Task] types")
+    }
+
+    @Test("Array field type creates reference")
+    func arrayFieldTypeCreatesReference() throws {
+        let source = """
+        struct Tag {
+            label: String
+        }
+
+        struct Article {
+            title: String
+            tags: [Tag]
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let tagRefs = symbols.references.filter { $0.definition.name == "Tag" }
+        #expect(!tagRefs.isEmpty, "Should have reference to Tag from [Tag] field type")
+    }
+
+    // MARK: - Dictionary Type References
+
+    @Test("Dictionary type annotation creates references to key and value types")
+    func dictionaryTypeAnnotationCreatesReferences() throws {
+        let source = """
+        struct User {
+            name: String
+        }
+
+        func main() {
+            var userById: [String: User] = [:]
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let userRefs = symbols.references.filter { $0.definition.name == "User" }
+        #expect(!userRefs.isEmpty, "Should have reference to User from [String: User] annotation")
+    }
+
+    @Test("Dictionary with custom key type creates reference")
+    func dictionaryCustomKeyTypeCreatesReference() throws {
+        let source = """
+        enum Status {
+            case active
+            case inactive
+        }
+
+        struct Data {
+            value: Int
+        }
+
+        func main() {
+            var dataByStatus: [Status: Data] = [:]
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let statusRefs = symbols.references.filter { $0.definition.name == "Status" }
+        let dataRefs = symbols.references.filter { $0.definition.name == "Data" }
+
+        // Note: Status may not be allowed as dictionary key (primitives only),
+        // but the reference should still be created for LSP purposes
+        #expect(!dataRefs.isEmpty, "Should have reference to Data from dictionary value type")
+    }
+
+    @Test("Dictionary parameter type creates references")
+    func dictionaryParameterTypeCreatesReferences() throws {
+        let source = """
+        struct Config {
+            setting: String
+        }
+
+        func processConfigs(configs: [String: Config]) {
+            print("processing")
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let configRefs = symbols.references.filter { $0.definition.name == "Config" }
+        #expect(!configRefs.isEmpty, "Should have reference to Config from [String: Config] parameter")
+    }
+
+    @Test("Dictionary return type creates references")
+    func dictionaryReturnTypeCreatesReferences() throws {
+        let source = """
+        struct Score {
+            value: Int
+        }
+
+        func getScores() -> [String: Score] {
+            var result: [String: Score] = [:]
+            return result
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let scoreRefs = symbols.references.filter { $0.definition.name == "Score" }
+        #expect(scoreRefs.count >= 2, "Should have references to Score from return type and variable")
+    }
+
+    // MARK: - Set Type References
+
+    @Test("Set type annotation creates reference to element type")
+    func setTypeAnnotationCreatesReference() throws {
+        let source = """
+        struct Tag {
+            label: String
+        }
+
+        func main() {
+            var tags: Set<Tag> = []
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let tagRefs = symbols.references.filter { $0.definition.name == "Tag" }
+        #expect(!tagRefs.isEmpty, "Should have reference to Tag from Set<Tag> annotation")
+    }
+
+    @Test("Set parameter type creates reference")
+    func setParameterTypeCreatesReference() throws {
+        let source = """
+        struct Permission {
+            name: String
+        }
+
+        func checkPermissions(perms: Set<Permission>) {
+            print("checking")
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let permRefs = symbols.references.filter { $0.definition.name == "Permission" }
+        #expect(!permRefs.isEmpty, "Should have reference to Permission from Set<Permission> parameter")
+    }
+
+    @Test("Set return type creates reference")
+    func setReturnTypeCreatesReference() throws {
+        let source = """
+        struct Role {
+            id: Int
+        }
+
+        func getRoles() -> Set<Role> {
+            var result: Set<Role> = []
+            return result
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let roleRefs = symbols.references.filter { $0.definition.name == "Role" }
+        #expect(roleRefs.count >= 2, "Should have references to Role from return type and variable")
+    }
+
+    // MARK: - Nested Collection Types
+
+    @Test("Nested array type creates reference")
+    func nestedArrayTypeCreatesReference() throws {
+        let source = """
+        struct Cell {
+            value: Int
+        }
+
+        func main() {
+            var grid: [[Cell]] = []
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let cellRefs = symbols.references.filter { $0.definition.name == "Cell" }
+        #expect(!cellRefs.isEmpty, "Should have reference to Cell from [[Cell]] annotation")
+    }
+
+    @Test("Array of optionals creates reference")
+    func arrayOfOptionalsCreatesReference() throws {
+        let source = """
+        struct Item {
+            id: Int
+        }
+
+        func main() {
+            var items: [Item?] = []
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let itemRefs = symbols.references.filter { $0.definition.name == "Item" }
+        #expect(!itemRefs.isEmpty, "Should have reference to Item from [Item?] annotation")
+    }
+
+    @Test("Optional array creates reference")
+    func optionalArrayCreatesReference() throws {
+        let source = """
+        struct Task {
+            name: String
+        }
+
+        func main() {
+            var tasks: [Task]? = nil
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let taskRefs = symbols.references.filter { $0.definition.name == "Task" }
+        #expect(!taskRefs.isEmpty, "Should have reference to Task from [Task]? annotation")
+    }
+
+    @Test("Dictionary with optional value creates references")
+    func dictionaryWithOptionalValueCreatesReferences() throws {
+        let source = """
+        struct Profile {
+            name: String
+        }
+
+        func main() {
+            var profiles: [String: Profile?] = [:]
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let profileRefs = symbols.references.filter { $0.definition.name == "Profile" }
+        #expect(!profileRefs.isEmpty, "Should have reference to Profile from [String: Profile?] annotation")
+    }
+
+    @Test("Dictionary with array value creates references")
+    func dictionaryWithArrayValueCreatesReferences() throws {
+        let source = """
+        struct Log {
+            message: String
+        }
+
+        func main() {
+            var logsByDay: [String: [Log]] = [:]
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let logRefs = symbols.references.filter { $0.definition.name == "Log" }
+        #expect(!logRefs.isEmpty, "Should have reference to Log from [String: [Log]] annotation")
+    }
+
+    @Test("Set of custom type in dictionary value")
+    func setInDictionaryValueCreatesReferences() throws {
+        let source = """
+        struct Tag {
+            name: String
+        }
+
+        func main() {
+            var tagsByCategory: [String: Set<Tag>] = [:]
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let tagRefs = symbols.references.filter { $0.definition.name == "Tag" }
+        #expect(!tagRefs.isEmpty, "Should have reference to Tag from [String: Set<Tag>] annotation")
+    }
+}
+
+@Suite("LSP Collection Type Find References Tests")
+struct CollectionTypeFindReferencesTests {
+
+    private func collectSymbols(from source: String) throws -> FileSymbols {
+        let lexer = Lexer(source: source, filename: "test.slang")
+        let tokens = try lexer.tokenize()
+        var parser = Parser(tokens: tokens)
+        let declarations = try parser.parse()
+        let collector = SymbolCollector()
+        return collector.collect(declarations: declarations, file: "test.slang")
+    }
+
+    @Test("Find all references to type used in multiple collection contexts")
+    func findReferencesAcrossCollectionContexts() throws {
+        let source = """
+        struct Point {
+            x: Int
+            y: Int
+        }
+
+        func getPoint() -> Point {
+            return Point { x: 0, y: 0 }
+        }
+
+        func processPoints(pts: [Point]) {
+            print("processing")
+        }
+
+        func main() {
+            var p: Point = Point { x: 1, y: 2 }
+            var pts: [Point] = []
+            var maybePoint: Point? = nil
+            var pointMap: [String: Point] = [:]
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let pointRefs = symbols.references.filter { $0.definition.name == "Point" }
+        // Count all references: return type, struct init (x2), parameter type [Point],
+        // var type Point, var type [Point], var type Point?, var type [String: Point]
+        #expect(pointRefs.count >= 6, "Should find Point in all collection type contexts")
+    }
+
+    @Test("Find references distinguishes between different types in collections")
+    func findReferencesDistinguishesDifferentTypes() throws {
+        let source = """
+        struct Dog {
+            name: String
+        }
+
+        struct Cat {
+            name: String
+        }
+
+        func main() {
+            var dogs: [Dog] = []
+            var cats: [Cat] = []
+            var dogOrCat: Dog? = nil
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let dogRefs = symbols.references.filter { $0.definition.name == "Dog" }
+        let catRefs = symbols.references.filter { $0.definition.name == "Cat" }
+
+        #expect(dogRefs.count == 2, "Should have 2 references to Dog ([Dog] and Dog?)")
+        #expect(catRefs.count == 1, "Should have 1 reference to Cat ([Cat])")
+    }
+
+    @Test("Find references includes enum in collection type")
+    func findReferencesIncludesEnumInCollection() throws {
+        let source = """
+        enum Status {
+            case pending
+            case done
+        }
+
+        func main() {
+            var statuses: [Status] = []
+            var s: Status = Status.pending
+            var maybeStatus: Status? = nil
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let statusRefs = symbols.references.filter { $0.definition.name == "Status" }
+        // [Status], Status, Status.pending prefix, Status?
+        #expect(statusRefs.count >= 3, "Should find Status in all contexts")
+    }
+
+    @Test("Find references includes union in collection type")
+    func findReferencesIncludesUnionInCollection() throws {
+        let source = """
+        struct Dog { name: String }
+        struct Cat { name: String }
+        union Pet = Dog | Cat
+
+        func main() {
+            var pets: [Pet] = []
+            var maybePet: Pet? = nil
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let petRefs = symbols.references.filter { $0.definition.name == "Pet" }
+        #expect(petRefs.count >= 2, "Should find Pet in [Pet] and Pet?")
+    }
+}
+
+@Suite("LSP Optional Switch Pattern Tests")
+struct OptionalSwitchPatternTests {
+
+    private func collectSymbols(from source: String) throws -> FileSymbols {
+        let lexer = Lexer(source: source, filename: "test.slang")
+        let tokens = try lexer.tokenize()
+        var parser = Parser(tokens: tokens)
+        let declarations = try parser.parse()
+        let collector = SymbolCollector()
+        return collector.collect(declarations: declarations, file: "test.slang")
+    }
+
+    @Test("Optional switch with some/none patterns collects symbols correctly")
+    func optionalSwitchWithSomeNonePatterns() throws {
+        let source = """
+        struct Person {
+            name: String
+        }
+
+        func main() {
+            var maybePerson: Person? = nil
+            switch (maybePerson) {
+                some -> print("has person")
+                none -> print("no person")
+            }
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        // Should have Person reference from type annotation
+        let personRefs = symbols.references.filter { $0.definition.name == "Person" }
+        #expect(!personRefs.isEmpty, "Should have reference to Person")
+
+        // Should have maybePerson variable definition
+        let varDefs = symbols.definitions.filter { $0.name == "maybePerson" && $0.kind == .variable }
+        #expect(!varDefs.isEmpty, "Should have maybePerson variable definition")
+    }
+
+    @Test("Optional switch expression with type narrowing")
+    func optionalSwitchExpressionWithTypeNarrowing() throws {
+        let source = """
+        struct Value {
+            data: Int
+        }
+
+        func main() {
+            var maybeValue: Value? = nil
+            var result: Int = switch (maybeValue) {
+                some -> return 1
+                none -> return 0
+            }
+        }
+        """
+
+        let symbols = try collectSymbols(from: source)
+
+        let valueRefs = symbols.references.filter { $0.definition.name == "Value" }
+        #expect(!valueRefs.isEmpty, "Should have reference to Value from Value? annotation")
+
+        let resultDef = symbols.definitions.first { $0.name == "result" && $0.kind == .variable }
+        #expect(resultDef != nil, "Should have result variable definition")
+    }
+}
+
 // MARK: - Variable Field Access Tests (Regression for bug: pet.name didn't resolve)
 
 @Suite("LSP Variable Field Access Tests")

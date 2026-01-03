@@ -53,11 +53,19 @@ struct ExampleTests {
     @Test("fibonacci.slang")
     func fibonacciExample() throws {
         let output = try runExample("fibonacci.slang")
-        #expect(output[0] == "Fibonacci sequence:")
-        #expect(output[1] == "fib(0) = 0")
-        #expect(output[2] == "fib(1) = 1")
-        #expect(output[3] == "fib(2) = 1")
-        #expect(output[10] == "fib(9) = 34")
+        #expect(output == [
+            "Fibonacci sequence:",
+            "fib(0) = 0",
+            "fib(1) = 1",
+            "fib(2) = 1",
+            "fib(3) = 2",
+            "fib(4) = 3",
+            "fib(5) = 5",
+            "fib(6) = 8",
+            "fib(7) = 13",
+            "fib(8) = 21",
+            "fib(9) = 34"
+        ])
     }
 
     @Test("structs.slang")
@@ -85,11 +93,19 @@ struct ExampleTests {
     @Test("loops.slang")
     func loopsExample() throws {
         let output = try runExample("loops.slang")
-        #expect(output[0] == "Counting up:")
-        #expect(output[1] == "1")
-        #expect(output[5] == "5")
-        #expect(output[6] == "Counting down:")
-        #expect(output[12] == "Sum of 1 to 10: 55")
+        #expect(output == [
+            "Counting up:",
+            "1", "2", "3", "4", "5",
+            "Counting down:",
+            "5", "4", "3", "2", "1",
+            "Sum of 1 to 10: 55",
+            "5 times table:",
+            "5 x 1 = 5",
+            "5 x 2 = 10",
+            "5 x 3 = 15",
+            "5 x 4 = 20",
+            "5 x 5 = 25"
+        ])
     }
 
     @Test("full.slang - v0.1 reference program")
@@ -133,9 +149,11 @@ struct ExampleTests {
         let output = try runExample("collections.slang")
         #expect(output == [
             "=== Optional ===",
-            "name is nil: true",
-            "greeting: some(Hello)",
+            "name == nil: true",
+            "greeting != nil: true",
             "name after assignment: some(World)",
+            "name has value: World",
+            "name length: 5",
             "=== Array ===",
             "First: 1",
             "Count: 5",
@@ -146,11 +164,11 @@ struct ExampleTests {
             "last: some(6)",
             "After removeAt(0): 2",
             "empty.isEmpty: true",
-            "empty.first is nil: true",
+            "empty.first == nil: true",
             "=== Dictionary ===",
             "ages count: 2",
             "alice age: some(30)",
-            "unknown age is nil: true",
+            "unknown age == nil: true",
             "After adding charlie: 3",
             "alice updated age: some(31)",
             "keys count: 3",

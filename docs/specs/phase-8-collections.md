@@ -37,6 +37,22 @@ This phase adds collection types to Slang:
 var name: String? = nil
 var value: String? = "hello"
 
+// Nil comparison
+var isNil: Bool = name == nil
+var hasValue: Bool = value != nil
+
+// Switch on optional (with type narrowing)
+switch (value) {
+    some -> print("value is: \(value)")  // value narrowed to String
+    none -> print("no value")
+}
+
+// Switch expression on optional
+var length: Int = switch (value) {
+    some -> return 5
+    none -> return 0
+}
+
 // Array
 var numbers: [Int] = [1, 2, 3, 4, 5]
 var first: Int = numbers[0]
@@ -116,6 +132,9 @@ case nilLiteral
 1. **Resolve optional types**: Handle `T?` annotations
 2. **Check nil literal**: Requires context to determine wrapped type
 3. **Assignment compatibility**: `T` can be assigned to `T?`, `nil` can be assigned to any `T?`
+4. **Nil comparison**: `x == nil` and `x != nil` work for optional types
+5. **Switch on optionals**: Support `some`/`none` patterns with exhaustiveness checking
+6. **Type narrowing**: In `some` branch, variable is narrowed to wrapped type
 
 #### Step 8.1.7: Interpreter Changes
 
@@ -123,15 +142,22 @@ case nilLiteral
 
 1. **Evaluate nil**: Return `.none`
 2. **Wrap values**: When assigning `T` to `T?`, wrap in `.some()`
+3. **Nil comparison**: Compare `.some`/`.none` values
+4. **Switch on optionals**: Match `some`/`none` patterns, extract wrapped value for type narrowing
 
 #### Step 8.1.8: Tests
 
-**File**: `Tests/SlangCoreTests/OptionalTests.swift`
+**File**: `Tests/SlangCoreTests/CollectionTests.swift`
 
 - Optional type annotations
 - nil literal
 - Assigning value to optional
 - Assigning nil to optional
+- Nil comparison (`== nil`, `!= nil`)
+- Switch statement on optionals
+- Switch expression on optionals
+- Type narrowing in switch
+- Exhaustiveness checking
 - Type checking errors
 
 ---
@@ -435,6 +461,26 @@ func main() {
     var name: String? = nil
     var greeting: String? = "Hello"
 
+    // Nil comparison
+    print("name == nil: \(name == nil)")      // true
+    print("greeting != nil: \(greeting != nil)")  // true
+
+    // Assign value to optional
+    name = "World"
+
+    // Switch on optional with type narrowing
+    switch (name) {
+        some -> print("name is: \(name)")  // name narrowed to String
+        none -> print("name is nil")
+    }
+
+    // Switch expression on optional
+    var length: Int = switch (name) {
+        some -> return 5
+        none -> return 0
+    }
+    print("length: \(length)")
+
     // Array
     var numbers: [Int] = [1, 2, 3, 4, 5]
     print("First: \(numbers[0])")
@@ -446,6 +492,7 @@ func main() {
     var ages: [String: Int] = ["alice": 30, "bob": 25]
     var aliceAge: Int? = ages["alice"]
     var unknownAge: Int? = ages["charlie"]
+    print("unknown == nil: \(unknownAge == nil)")  // true
     ages["charlie"] = 35
 
     // Set
@@ -465,6 +512,11 @@ func main() {
 - [x] `nil` literal works
 - [x] `T` can be assigned to `T?`
 - [x] `nil` can be assigned to any `T?`
+- [x] Nil comparison: `x == nil` and `x != nil`
+- [x] Switch statement on optionals with `some`/`none` patterns
+- [x] Switch expression on optionals
+- [x] Type narrowing: in `some` branch, variable is unwrapped type
+- [x] Exhaustiveness checking for optional switch
 - [x] Type errors for mismatched optional types
 
 ### Phase 8.2 - Array

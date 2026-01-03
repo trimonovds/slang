@@ -114,6 +114,115 @@ struct CollectionTests {
         try run(source, expectOutput: ["nil"])
     }
 
+    @Test("Optional nil comparison - equals nil")
+    func optionalNilComparisonEquals() throws {
+        let source = """
+        func main() {
+            var x: Int? = nil
+            print("\\(x == nil)")
+            x = 42
+            print("\\(x == nil)")
+        }
+        """
+        try run(source, expectOutput: ["true", "false"])
+    }
+
+    @Test("Optional nil comparison - not equals nil")
+    func optionalNilComparisonNotEquals() throws {
+        let source = """
+        func main() {
+            var x: String? = "hello"
+            print("\\(x != nil)")
+            x = nil
+            print("\\(x != nil)")
+        }
+        """
+        try run(source, expectOutput: ["true", "false"])
+    }
+
+    @Test("Optional nil comparison - assign to variable")
+    func optionalNilComparisonAssign() throws {
+        let source = """
+        func main() {
+            var x: Int? = nil
+            var isNil: Bool = x == nil
+            var notNil: Bool = x != nil
+            print("\\(isNil)")
+            print("\\(notNil)")
+        }
+        """
+        try run(source, expectOutput: ["true", "false"])
+    }
+
+    @Test("Optional switch statement")
+    func optionalSwitchStatement() throws {
+        let source = """
+        func main() {
+            var x: Int? = 42
+            switch (x) {
+                some -> print("has value")
+                none -> print("nil")
+            }
+            x = nil
+            switch (x) {
+                some -> print("has value")
+                none -> print("nil")
+            }
+        }
+        """
+        try run(source, expectOutput: ["has value", "nil"])
+    }
+
+    @Test("Optional switch statement with type narrowing")
+    func optionalSwitchTypeNarrowing() throws {
+        let source = """
+        func double(n: Int) -> Int { return n * 2 }
+        func main() {
+            var x: Int? = 5
+            switch (x) {
+                some -> print("\\(double(x))")
+                none -> print("nil")
+            }
+        }
+        """
+        try run(source, expectOutput: ["10"])
+    }
+
+    @Test("Optional switch expression")
+    func optionalSwitchExpression() throws {
+        let source = """
+        func main() {
+            var x: Int? = 10
+            var result: Int = switch (x) {
+                some -> return x * 2
+                none -> return 0
+            }
+            print("\\(result)")
+
+            x = nil
+            var result2: Int = switch (x) {
+                some -> return x
+                none -> return -1
+            }
+            print("\\(result2)")
+        }
+        """
+        try run(source, expectOutput: ["20", "-1"])
+    }
+
+    @Test("Optional switch exhaustiveness error")
+    func optionalSwitchExhaustivenessError() throws {
+        let source = """
+        func main() {
+            var x: Int? = 42
+            switch (x) {
+                some -> print("value")
+            }
+        }
+        """
+        try expectTypeError(source, containing: "Missing cases: none")
+    }
+
     // Note: Nested optionals (Int??) are not currently supported
     // @Test("Nested optional")
     // func nestedOptional() throws { ... }

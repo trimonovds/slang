@@ -253,23 +253,41 @@ extension Interpreter {
         }
 
         for switchCase in cases {
-            let patternValue = try evaluate(switchCase.pattern)
-
             // Match based on type of subject
             var matches = false
             var boundValue: Value? = nil
 
-            switch (subjectValue, patternValue) {
-            case (.enumCase(let t1, let c1), .enumCase(let t2, let c2)):
-                matches = t1 == t2 && c1 == c2
-            case (.unionInstance(let t1, let v1, let wrappedValue), .unionInstance(let t2, let v2, _)):
-                // Match on union type and variant, extract wrapped value for binding
-                matches = t1 == t2 && v1 == v2
-                if matches {
-                    boundValue = wrappedValue
+            // Handle optional patterns (some/none identifiers) specially
+            if case .identifier(let patternName) = switchCase.pattern.kind {
+                if patternName == "some" {
+                    if case .some(let wrappedValue) = subjectValue {
+                        matches = true
+                        boundValue = wrappedValue
+                    }
+                } else if patternName == "none" {
+                    if case .none = subjectValue {
+                        matches = true
+                    }
+                } else {
+                    // Regular identifier - evaluate it
+                    let patternValue = try evaluate(switchCase.pattern)
+                    matches = subjectValue == patternValue
                 }
-            default:
-                matches = subjectValue == patternValue
+            } else {
+                let patternValue = try evaluate(switchCase.pattern)
+
+                switch (subjectValue, patternValue) {
+                case (.enumCase(let t1, let c1), .enumCase(let t2, let c2)):
+                    matches = t1 == t2 && c1 == c2
+                case (.unionInstance(let t1, let v1, let wrappedValue), .unionInstance(let t2, let v2, _)):
+                    // Match on union type and variant, extract wrapped value for binding
+                    matches = t1 == t2 && v1 == v2
+                    if matches {
+                        boundValue = wrappedValue
+                    }
+                default:
+                    matches = subjectValue == patternValue
+                }
             }
 
             if matches {
@@ -946,23 +964,41 @@ extension Interpreter {
         }
 
         for switchCase in cases {
-            let patternValue = try evaluate(switchCase.pattern)
-
             // Match based on type of subject
             var matches = false
             var boundValue: Value? = nil
 
-            switch (subjectValue, patternValue) {
-            case (.enumCase(let t1, let c1), .enumCase(let t2, let c2)):
-                matches = t1 == t2 && c1 == c2
-            case (.unionInstance(let t1, let v1, let wrappedValue), .unionInstance(let t2, let v2, _)):
-                // Match on union type and variant, extract wrapped value for binding
-                matches = t1 == t2 && v1 == v2
-                if matches {
-                    boundValue = wrappedValue
+            // Handle optional patterns (some/none identifiers) specially
+            if case .identifier(let patternName) = switchCase.pattern.kind {
+                if patternName == "some" {
+                    if case .some(let wrappedValue) = subjectValue {
+                        matches = true
+                        boundValue = wrappedValue
+                    }
+                } else if patternName == "none" {
+                    if case .none = subjectValue {
+                        matches = true
+                    }
+                } else {
+                    // Regular identifier - evaluate it
+                    let patternValue = try evaluate(switchCase.pattern)
+                    matches = subjectValue == patternValue
                 }
-            default:
-                matches = subjectValue == patternValue
+            } else {
+                let patternValue = try evaluate(switchCase.pattern)
+
+                switch (subjectValue, patternValue) {
+                case (.enumCase(let t1, let c1), .enumCase(let t2, let c2)):
+                    matches = t1 == t2 && c1 == c2
+                case (.unionInstance(let t1, let v1, let wrappedValue), .unionInstance(let t2, let v2, _)):
+                    // Match on union type and variant, extract wrapped value for binding
+                    matches = t1 == t2 && v1 == v2
+                    if matches {
+                        boundValue = wrappedValue
+                    }
+                default:
+                    matches = subjectValue == patternValue
+                }
             }
 
             if matches {
