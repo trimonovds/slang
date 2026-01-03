@@ -526,18 +526,61 @@ extension Interpreter {
     }
 
     private func evaluateAssignment(left: Expression, op: BinaryOperator, right: Expression, range: SourceRange) throws -> Value {
-        // Handle subscript assignment: array[i] = value or dict[key] = value
+        // Handle subscript assignment: array[i] = value, dict[key] = value, or nested array[i][j] = value
         if case .subscriptAccess(let object, let index) = left.kind {
             guard op == .assign else {
                 throw RuntimeError("Compound assignment to subscript not supported", at: range)
             }
 
+            let rightVal = try evaluate(right)
+            let indexVal = try evaluate(index)
+
+            // Handle nested subscript: array[i][j] = value
+            if case .subscriptAccess(let outerObject, let outerIndex) = object.kind {
+                guard case .identifier(let name) = outerObject.kind else {
+                    throw RuntimeError("Nested subscript assignment requires a variable", at: outerObject.range)
+                }
+
+                let outerIndexVal = try evaluate(outerIndex)
+
+                guard var objectVal = environment.get(name) else {
+                    throw RuntimeError("Undefined variable '\(name)'", at: outerObject.range)
+                }
+
+                // Array of arrays
+                if case .arrayInstance(var outerElements) = objectVal {
+                    guard case .int(let outerIdx) = outerIndexVal else {
+                        throw RuntimeError("Array subscript index must be Int", at: outerIndex.range)
+                    }
+                    if outerIdx < 0 || outerIdx >= outerElements.count {
+                        throw RuntimeError("Array index \(outerIdx) out of bounds", at: range)
+                    }
+
+                    guard case .arrayInstance(var innerElements) = outerElements[outerIdx] else {
+                        throw RuntimeError("Cannot subscript non-array value", at: object.range)
+                    }
+
+                    guard case .int(let innerIdx) = indexVal else {
+                        throw RuntimeError("Array subscript index must be Int", at: index.range)
+                    }
+                    if innerIdx < 0 || innerIdx >= innerElements.count {
+                        throw RuntimeError("Array index \(innerIdx) out of bounds", at: range)
+                    }
+
+                    innerElements[innerIdx] = rightVal
+                    outerElements[outerIdx] = .arrayInstance(elements: innerElements)
+                    objectVal = .arrayInstance(elements: outerElements)
+                    environment.assign(name, value: objectVal)
+                    return rightVal
+                }
+
+                throw RuntimeError("Cannot assign to nested subscript of \(objectVal)", at: range)
+            }
+
+            // Handle simple subscript: array[i] = value or dict[key] = value
             guard case .identifier(let name) = object.kind else {
                 throw RuntimeError("Subscript assignment requires a variable", at: object.range)
             }
-
-            let rightVal = try evaluate(right)
-            let indexVal = try evaluate(index)
 
             guard var objectVal = environment.get(name) else {
                 throw RuntimeError("Undefined variable '\(name)'", at: object.range)
